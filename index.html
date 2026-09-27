@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FiveM Police Department Portal</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        police: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            900: '#1e1b4b',
+                            dark: '#0b0f19',
+                            card: '#111827',
+                            border: '#1f2937',
+                            gold: '#f59e0b'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Font: Inter / Prompt -->
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Prompt', sans-serif;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0b0f19;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4b5563;
+        }
+    </style>
+</head>
+<body class="bg-police-dark text-gray-100 min-h-screen flex flex-col selection:bg-indigo-500 selection:text-white">
+
+    <!-- Custom Notification Toast -->
+    <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- MAIN APP CONTAINER -->
+    <div id="app" class="flex-1 flex flex-col">
+        <!-- Views will be dynamically injected here via JS -->
+    </div>
+
+    <script>
+        /**
+         * FiveM Police Portal State & Logic Manager
+         */
+        const STORAGE_KEYS = {
+            USERS: 'fivem_police_users',
+            SESSION: 'fivem_police_session',
+            INVESTIGATIONS: 'fivem_police_investigations'
+        };
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        // Initial Mock Data if empty
+        function initializeStorage() {
+            if (!localStorage.getItem(STORAGE_KEYS.USERS)) {
+                const defaultUsers = [
+                    {
+                        id: 'CID-99999',
+                        name: 'Col. John Miller',
+                        callsign: 'LSPD-01',
+                        username: 'johnmiller',
+                        password: 'adminpassword'
+                    }
+                ];
+                localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(defaultUsers));
+            }
+
+            if (!localStorage.getItem(STORAGE_KEYS.INVESTIGATIONS)) {
+                const defaultInvestigations = [
+                    {
+                        id: 'CR-100234',
+                        reportDate: '2026-06-06',
+                        leadDetective: 'Col. John Miller',
+                        assistingOfficers: 'Det. Sarah Connor',
+                        crimeType: 'ปล้นทรัพย์',
+                        crimeTypeOther: '',
+                        location: 'Fleeca Bank, Legion Square',
+                        incidentDateTime: '2026-06-05 22:10',
+                        victims: [
+                            { name: 'Fleeca Bank Corp.', contact: '-', role: 'เจ้าของทรัพย์สิน / สถานที่เกิดเหตุ', injury: 'ไม่มีผู้บาดเจ็บ ทรัพย์สินความเสียหายอยู่ระหว่างประเมิน' }
+                        ],
+                        suspects: [
+                            { name: 'Unknown male', description: 'สูงประมาณ 180ซม. สวมหมวกไหมพรม เสื้อฮู้ดสีดำ', contact: '-', locationSeen: 'หลบหนีไปทางตรอกด้านหลังธนาคาร' }
+                        ],
+                        witnesses: [
+                            { name: 'Bank teller', contact: '055-1234', statement: 'เห็นผู้ต้องสงสัยใช้อาวุธปืนข่มขู่ก่อนหลบหนี' }
+                        ],
+                        summary: 'ผู้ต้องสงสัยเข้ามาในธนาคารเวลาประมาณ 22:10 น. ใช้อาวุธปืนข่มขู่พนักงาน และหลบหนีไป',
+                        evidence: '1. ปลอกกระสุนบริเวณหน้าประตู\n2. ไฟล์กล้องวงจรปิด\n3. รอยเท้าบริเวณทางออกหลัง',
+                        actions: ['ตรวจสอบกล้องวงจรปิด (CCTV)', 'สอบปากคำพยานและผู้เกี่ยวข้อง'],
+                        investigationNotes: '06/06/2026 - ตรวจสอบกล้องวงจรปิดบริเวณจุดเกิดเหตุ พบภาพผู้ต้องสงสัย 1 ราย\n06/06/2026 - สอบปากคำพนักงานธนาคารเบื้องต้น',
+                        status: 'กำลังดำเนินการ (In Progress)',
+                        signature: 'Col. John Miller',
+                        position: 'Lead Detective'
+                    }
+                ];
+                localStorage.setItem(STORAGE_KEYS.INVESTIGATIONS, JSON.stringify(defaultInvestigations));
+            }
+        }
+
+        // Canonical case status options used across the list view and the report form
+        const CASE_STATUSES = [
+            'กำลังดำเนินการ (In Progress)',
+            'ปิดคดี (Closed)',
+            'หมดอายุความ (Statute of Limitations Expired)'
+        ];
+
+        // Normalizes a case record so older/legacy single-field records still render correctly
+        function normalizeCase(c) {
+            if (!Array.isArray(c.victims)) {
+                c.victims = c.victimName ? [{ name: c.victimName, contact: '', role: '', injury: c.victimStatus || '' }] : [];
+            }
+            if (!Array.isArray(c.suspects)) {
+                c.suspects = c.suspectName ? [{ name: c.suspectName, description: '', contact: '', locationSeen: c.suspectVehicle || '' }] : [];
+            }
+            if (!Array.isArray(c.witnesses)) {
+                c.witnesses = c.witnessName ? [{ name: c.witnessName, contact: c.witnessContact || '', statement: '' }] : [];
+            }
+            if (typeof c.investigationNotes !== 'string') {
+                c.investigationNotes = '';
+            }
+            if (!CASE_STATUSES.includes(c.status)) {
+                // Map old free-text statuses onto the new canonical set
+                c.status = (c.status || '').includes('ปิดคดี') || (c.status || '').includes('Closed')
+                    ? 'ปิดคดี (Closed)'
+                    : 'กำลังดำเนินการ (In Progress)';
+            }
+            return c;
+        }
+
+        // Notification Helper
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const toast = document.createElement('div');
+            
+            const bgCol = type === 'success' ? 'bg-emerald-600 border-emerald-500' : 
+                          type === 'error' ? 'bg-rose-600 border-rose-500' : 'bg-amber-600 border-amber-500';
+            
+            toast.className = `pointer-events-auto px-4 py-3 rounded-xl border text-white shadow-xl flex items-center gap-3 transition-all duration-300 transform translate-y-[-20px] opacity-0 ${bgCol}`;
+            
+            const icon = type === 'success' ? 'fa-circle-check' : type === 'error' ? 'fa-circle-exclamation' : 'fa-circle-info';
+            toast.innerHTML = `<i class="fa-solid ${icon} text-lg"></i><span class="text-sm font-medium">${escapeHtml(message)}</span>`;
+            
+            container.appendChild(toast);
+            
+            // Fade in
+            setTimeout(() => {
+                toast.classList.remove('translate-y-[-20px]', 'opacity-0');
+            }, 10);
+
+            // Fade out
+            setTimeout(() => {
+                toast.classList.add('translate-y-[-20px]', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3500);
+        }
+
+        // Session Management
+        function getCurrentUser() {
+            const session = localStorage.getItem(STORAGE_KEYS.SESSION);
+            return session ? JSON.parse(session) : null;
+        }
+
+        function setCurrentUser(user) {
+            if (user) {
+                localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(user));
+            } else {
+                localStorage.removeItem(STORAGE_KEYS.SESSION);
+            }
+            renderApp();
+        }
+
+        function renderAuthView() {
+            const app = document.getElementById('app');
+            app.innerHTML = `
+                <div class="min-h-screen flex items-center justify-center p-4 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-950 via-police-dark to-black relative overflow-hidden">
+                    <div class="absolute -right-20 -bottom-20 opacity-5 pointer-events-none text-police-gold text-[30rem]">
+                        <i class="fa-solid fa-shield-halved"></i>
+                    </div>
+
+                    <div class="w-full max-w-md bg-police-card/80 backdrop-blur-xl border border-police-border rounded-2xl shadow-2xl overflow-hidden relative z-10">
+                        <div class="bg-gradient-to-r from-indigo-900 to-slate-900 p-6 text-center border-b border-police-border relative">
+                            <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-police-gold/10 border border-police-gold/30 text-police-gold text-3xl mb-3 shadow-inner">
+                                <i class="fa-solid fa-shield-halved"></i>
+                            </div>
+                            <h1 class="text-2xl font-bold tracking-wider text-white">LSPD PORTAL</h1>
+                            <p class="text-xs text-gray-400 mt-1 uppercase tracking-widest font-semibold">Los Santos Police Department</p>
+                        </div>
+
+                        <div class="grid grid-cols-2 bg-gray-900/50 p-1.5 border-b border-police-border text-sm font-medium">
+                            <button id="tab-login" onclick="switchAuthTab('login')" class="py-2.5 rounded-xl transition-all text-center bg-indigo-600 text-white shadow-md">
+                                Login
+                            </button>
+                            <button id="tab-register" onclick="switchAuthTab('register')" class="py-2.5 rounded-xl transition-all text-center text-gray-400 hover:text-white">
+                                Register Officer
+                            </button>
+                        </div>
+
+                        <div class="p-6">
+                            <form id="form-login" onsubmit="handleLogin(event)" class="space-y-4">
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Name & Surname</label>
+                                    <div class="relative">
+                                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-gray-500">
+                                            <i class="fa-solid fa-user"></i>
+                                        </span>
+                                        <input type="text" id="login-name" required placeholder="Enter your full name" 
+                                            class="w-full pl-10 pr-4 py-3 bg-gray-900/80 border border-gray-700 rounded-xl text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-gray-200 placeholder-gray-600 transition-all">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Password</label>
+                                    <div class="relative">
+                                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-gray-500">
+                                            <i class="fa-solid fa-lock"></i>
+                                        </span>
+                                        <input type="password" id="login-password" required placeholder="••••••••" 
+                                            class="w-full pl-10 pr-4 py-3 bg-gray-900/80 border border-gray-700 rounded-xl text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-gray-200 placeholder-gray-600 transition-all">
+                                    </div>
+                                </div>
+                                <button type="submit" class="w-full mt-2 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-semibold rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2">
+                                    <i class="fa-solid fa-right-to-bracket"></i> Log In to Database
+                                </button>
+                            </form>
+
+                            <form id="form-register" onsubmit="handleRegister(event)" class="space-y-4 hidden">
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Name & Surname</label>
+                                    <div class="relative">
+                                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-gray-500">
+                                            <i class="fa-solid fa-user-shield"></i>
+                                        </span>
+                                        <input type="text" id="reg-name" required placeholder="e.g. Officer John Wick" 
+                                            class="w-full pl-10 pr-4 py-3 bg-gray-900/80 border border-gray-700 rounded-xl text-sm focus:outline-none focus:border-emerald-500 text-gray-200 placeholder-gray-600">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Password</label>
+                                    <div class="relative">
+                                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-gray-500">
+                                            <i class="fa-solid fa-lock"></i>
+                                        </span>
+                                        <input type="password" id="reg-password" required placeholder="••••••••" 
+                                            class="w-full pl-10 pr-4 py-3 bg-gray-900/80 border border-gray-700 rounded-xl text-sm focus:outline-none focus:border-emerald-500 text-gray-200 placeholder-gray-600">
+                                    </div>
+                                </div>
+                                <button type="submit" class="w-full mt-2 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold rounded-xl shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2">
+                                    <i class="fa-solid fa-user-plus"></i> Register New Officer
+                                </button>
+                            </form>
+                        </div>
+                        
+                        <div class="px-6 py-4 bg-gray-900/40 border-t border-police-border text-center text-xs text-gray-500">
+                            FiveM Roleplay Secure Database System v2.5
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function switchAuthTab(tab) {
+            const btnLogin = document.getElementById('tab-login');
+            const btnRegister = document.getElementById('tab-register');
+            const formLogin = document.getElementById('form-login');
+            const formRegister = document.getElementById('form-register');
+
+            if (tab === 'login') {
+                btnLogin.className = "py-2.5 rounded-xl transition-all text-center bg-indigo-600 text-white shadow-md";
+                btnRegister.className = "py-2.5 rounded-xl transition-all text-center text-gray-400 hover:text-white";
+                formLogin.classList.remove('hidden');
+                formRegister.classList.add('hidden');
+            } else {
+                btnRegister.className = "py-2.5 rounded-xl transition-all text-center bg-emerald-600 text-white shadow-md";
+                btnLogin.className = "py-2.5 rounded-xl transition-all text-center text-gray-400 hover:text-white";
+                formRegister.classList.remove('hidden');
+                formLogin.classList.add('hidden');
+            }
+        }
+
+        function handleLogin(e) {
+            e.preventDefault();
+            const nameInput = document.getElementById('login-name').value.trim();
+            const password = document.getElementById('login-password').value;
+
+            const users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS)) || [];
+            const foundUser = users.find(u => u.name.toLowerCase() === nameInput.toLowerCase() && u.password === password);
+
+            if (foundUser) {
+                setCurrentUser(foundUser);
+                showToast(`Welcome back, ${foundUser.name}`, 'success');
+            } else {
+                showToast('Invalid name or password!', 'error');
+            }
+        }
+
+        function handleRegister(e) {
+            e.preventDefault();
+            const name = document.getElementById('reg-name').value.trim();
+            const password = document.getElementById('reg-password').value;
+
+            const users = JSON.parse(localStorage.getItem(STORAGE_KEYS.USERS)) || [];
+            
+            if (users.some(u => u.name.toLowerCase() === name.toLowerCase())) {
+                showToast('This name is already registered in the system', 'error');
+                return;
+            }
+
+            const randomIdNum = Math.floor(10000 + Math.random() * 90000);
+            const callsignNum = Math.floor(10 + Math.random() * 89);
+            
+            const newUser = {
+                id: `CID-${randomIdNum}`,
+                name: name,
+                callsign: `LSPD-${callsignNum}`,
+                password: password
+            };
+
+            users.push(newUser);
+            localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+
+            showToast('Registration successful! Please log in with your name and password.', 'success');
+            switchAuthTab('login');
+            document.getElementById('form-register').reset();
+        }
+
+        let activeTab = 'investigation-list'; // 'investigation-list', 'create-investigation', 'edit-investigation', or 'law-codes'
+        let editingCaseId = null; // Case ID currently open in the form, when activeTab === 'edit-investigation'
+
+        function renderDashboardView() {
+            const user = getCurrentUser();
+            if (!user) {
+                renderAuthView();
+                return;
+            }
+
+            const app = document.getElementById('app');
+            app.innerHTML = `
+                <div class="min-h-screen flex flex-col bg-police-dark">
+                    <!-- Top Navigation Bar -->
+                    <header class="bg-gray-900/90 backdrop-blur-md border-b border-police-border sticky top-0 z-40 px-4 lg:px-8 py-3.5 flex items-center justify-between">
+                        <!-- Left Navigation Buttons -->
+                        <div class="flex items-center gap-3">
+                            <div class="flex items-center gap-2.5 mr-4 pr-4 border-r border-gray-800">
+                                <div class="w-10 h-10 rounded-xl bg-police-gold/10 border border-police-gold/30 text-police-gold flex items-center justify-center text-lg font-bold shadow-inner">
+                                    <i class="fa-solid fa-shield-halved"></i>
+                                </div>
+                                <div class="hidden sm:block">
+                                    <span class="font-bold text-sm tracking-wide block text-white leading-none">LSPD</span>
+                                    <span class="text-[10px] text-gray-400 tracking-wider font-semibold">DEPARTMENT</span>
+                                </div>
+                            </div>
+
+                            <button onclick="setActiveTab('investigation-list')" id="nav-btn-investigations" class="px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${(activeTab === 'investigation-list' || activeTab === 'create-investigation' || activeTab === 'edit-investigation') ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'text-gray-400 hover:text-white hover:bg-gray-800/60'}">
+                                <i class="fa-solid fa-magnifying-glass-chart"></i>
+                                <span>Investigations</span>
+                            </button>
+
+                            <button onclick="setActiveTab('law-codes')" id="nav-btn-law" class="px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'law-codes' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'text-gray-400 hover:text-white hover:bg-gray-800/60'}">
+                                <i class="fa-solid fa-scale-balanced"></i>
+                                <span>Law Codes</span>
+                            </button>
+                        </div>
+
+                        <!-- Right Profile Badge & Logout -->
+                        <div class="flex items-center gap-4">
+                            <div class="flex items-center gap-3 bg-gray-800/50 border border-gray-700/60 rounded-xl px-3.5 py-1.5">
+                                <div class="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-sm">
+                                    <i class="fa-solid fa-user-shield"></i>
+                                </div>
+                                <div class="text-left">
+                                    <div class="text-xs font-bold text-gray-200">${escapeHtml(user.name)}</div>
+                                    <div class="text-[10px] text-police-gold font-mono font-semibold">${escapeHtml(user.callsign)} | ${escapeHtml(user.id)}</div>
+                                </div>
+                            </div>
+
+                            <button onclick="handleLogout()" title="Log Out" class="relative w-11 h-11 rounded-full bg-gradient-to-b from-gray-700 via-gray-800 to-black border border-black/60 flex items-center justify-center transition-all duration-150 shadow-[inset_0_1px_1px_rgba(255,255,255,0.15),inset_0_-2px_3px_rgba(0,0,0,0.6),0_1px_2px_rgba(0,0,0,0.5)] hover:shadow-[inset_0_1px_1px_rgba(255,255,255,0.15),inset_0_-2px_3px_rgba(0,0,0,0.6),0_0_14px_rgba(244,63,94,0.55)] active:scale-95 active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.8)]">
+                                <span class="absolute inset-0.5 rounded-full border border-white/5"></span>
+                                <i class="fa-solid fa-power-off text-[13px] text-rose-500 drop-shadow-[0_0_4px_rgba(244,63,94,0.7)]"></i>
+                            </button>
+                        </div>
+                    </header>
+
+                    <!-- Main Dynamic Content Area -->
+                    <main class="flex-1 p-4 lg:p-8 max-w-7xl mx-auto w-full">
+                        <div id="tab-content">
+                            <!-- Injected dynamically -->
+                        </div>
+                    </main>
+                </div>
+            `;
+
+            renderTabContent();
+        }
+
+        function setActiveTab(tab, caseId = null) {
+            activeTab = tab;
+            editingCaseId = tab === 'edit-investigation' ? caseId : null;
+            renderDashboardView();
+        }
+
+        function handleLogout() {
+            setCurrentUser(null);
+            showToast('Logged out successfully', 'info');
+        }
+
+        function renderTabContent() {
+            const container = document.getElementById('tab-content');
+            if (activeTab === 'law-codes') {
+                container.innerHTML = getLawCodesHTML();
+                initLawCodesEvents();
+            } else if (activeTab === 'create-investigation') {
+                container.innerHTML = getInvestigationFormHTML(null);
+            } else if (activeTab === 'edit-investigation') {
+                container.innerHTML = getInvestigationFormHTML(editingCaseId);
+            } else {
+                container.innerHTML = getInvestigationListHTML();
+                initInvestigationListEvents();
+            }
+        }
+
+
+        // ============ LAW CODES (PENAL CODE) MODULE ============
+        const LAW_CHAPTERS = [{"n":"01","t":"General Provisions & Parties Involved","tth":"หลักทั่วไปและผู้เกี่ยวข้อง","rows":[["§1.02","พยายามกระทำความผิด","—","—","Infraction"],["§1.03","สมคบกระทำความผิด","—","—","Infraction"],["§1.04","ผู้สนับสนุน","—","—","Infraction"],["§1.05","ผู้ช่วยเหลือภายหลัง","—","—","Infraction"],["§1.06","ชักชวนให้ก่ออาชญากรรม","—","—","Infraction"],["§1.07","ปกปิดความผิด","—","—","Infraction"],["§1.08","ทำลายหลักฐาน","—","—","Infraction"],["§1.09","สร้างหลักฐานเท็จ","—","—","Infraction"],["§1.10","ให้ถ้อยคำเท็จ","—","—","Infraction"]]},{"n":"02","t":"Life & Bodily Harm","tth":"ชีวิตและร่างกาย","rows":[["§2.01","ทำร้ายร่างกาย","4 นาที","$2,000","Infraction"],["§2.02","ทำร้ายร่างกายร้ายแรง","10 นาที","$5,000","Misdemeanor"],["§2.03","ทำร้ายด้วยอาวุธ","15 นาที","$10,000","Serious Misdemeanor"],["§2.04","ทำร้ายเจ้าหน้าที่","12 นาที","$7,500","Misdemeanor"],["§2.05","ทำร้ายเจ้าหน้าที่ด้วยอาวุธ","22 นาที","$17,500","Felony"],["§2.06","ทำร้าย EMS/Fire","15 นาที","$10,000","Serious Misdemeanor"],["§2.07","ข่มขู่","5 นาที","$2,500","Misdemeanor"],["§2.08","ขู่ฆ่า","12 นาที","$7,500","Misdemeanor"],["§2.09","หน่วงเหนี่ยว/กักขัง","10 นาที","$7,500","Misdemeanor"],["§2.10","ลักพาตัว","30 นาที","$25,000","Felony"],["§2.11","ลักพาตัวโดยมีอาวุธ","40 นาที","$37,500","Serious Felony"],["§2.12","จับตัวประกัน","40 นาที","$37,500","Serious Felony"],["§2.13","จับเจ้าหน้าที่เป็นตัวประกัน","50 นาที","$50,000","Serious Felony"],["§2.14","ทรมาน","40 นาที","$37,500","Serious Felony"],["§2.15","ทำให้พิการ/เสียอวัยวะ","35 นาที","$30,000","Felony"],["§2.16","ทำร้ายโดยประมาท","8 นาที","$3,750","Misdemeanor"],["§2.17","ทำให้ผู้อื่นถึงแก่ความตายโดยประมาท","25 นาที","$20,000","Felony"],["§2.18","ฆ่าคนโดยไม่เจตนา","30 นาที","$25,000","Felony"],["§2.19","ฆ่าคน","40 นาที","$37,500","Serious Felony"],["§2.20","ฆ่าโดยไตร่ตรองไว้ก่อน","50 นาที","$50,000","Serious Felony"],["§2.21","พยายามฆ่า","30 นาที","$25,000","Felony"],["§2.22","พยายามฆ่าเจ้าหน้าที่","40 นาที","$37,500","Serious Felony"],["§2.23","ฆ่าเจ้าหน้าที่ขณะปฏิบัติหน้าที่","60 นาที","$75,000","Major Felony"],["§2.24","ฆ่าเจ้าหน้าที่รัฐบาลกลาง","60 นาที","$75,000","Major Felony"],["§2.25","ฆ่าหลายราย","75 นาที","$100,000","Major Felony"]]},{"n":"03","t":"Liberty & Harassment","tth":"เสรีภาพและการคุกคาม","rows":[["§3.01","ข่มขู่","5 นาที","$2,500","Misdemeanor"],["§3.02","สะกดรอย","8 นาที","$3,750","Misdemeanor"],["§3.03","สะกดรอยร้ายแรง","12 นาที","$7,500","Misdemeanor"],["§3.04","คุกคามซ้ำ","5 นาที","$2,500","Misdemeanor"],["§3.05","บังคับขู่เข็ญ","10 นาที","$7,500","Misdemeanor"],["§3.06","บังคับให้ก่ออาชญากรรม","15 นาที","$12,500","Serious Misdemeanor"],["§3.07","กักขังโดยมิชอบ","10 นาที","$7,500","Misdemeanor"],["§3.08","เคลื่อนย้ายบุคคลโดยมิชอบ","12 นาที","$10,000","Misdemeanor"],["§3.09","ค้ามนุษย์","50 นาที","$75,000","Serious Felony"],["§3.10","แรงงานบังคับ","35 นาที","$37,500","Felony"]]},{"n":"04","t":"Sexual Offenses","tth":"ความผิดทางเพศ","rows":[["§4.01","คุกคามทางเพศ","15 นาที","$12,500","Serious Misdemeanor"],["§4.02","ล่วงละเมิดทางเพศโดยใช้กำลัง","30 นาที","$25,000","Felony"],["§4.03","ล่วงละเมิดทางเพศโดยมีอาวุธ","40 นาที","$37,500","Serious Felony"],["§4.04","คุกคามทางเพศ","8 นาที","$5,000","Misdemeanor"],["§4.05","บังคับทางเพศ","20 นาที","$15,000","Felony"],["§4.06","ค้ามนุษย์เพื่อการแสวงประโยชน์ทางเพศ","50 นาที","$75,000","Serious Felony"]]},{"n":"05","t":"Property","tth":"ทรัพย์สิน","rows":[["§5.01","ลักทรัพย์","2 นาที","$1,250","Infraction"],["§5.02","ลักทรัพย์มูลค่าสูง","8 นาที","$5,000","Misdemeanor"],["§5.03","ลักของในร้าน","2 นาที","$1,250","Infraction"],["§5.04","ชิงทรัพย์","12 นาที","$10,000","Misdemeanor"],["§5.05","ชิงทรัพย์โดยมีอาวุธ","22 นาที","$17,500","Felony"],["§5.06","ปล้นธนาคาร","30 นาที","$25,000","Felony"],["§5.07","ปล้นธนาคารโดยมีอาวุธ","40 นาที","$37,500","Serious Felony"],["§5.08","ปล้นร้านค้า","12 นาที","$7,500","Misdemeanor"],["§5.09","ปล้นร้านอัญมณี","20 นาที","$15,000","Felony"],["§5.10","บุกรุกที่พักอาศัย","12 นาที","$7,500","Misdemeanor"],["§5.11","บุกรุกธุรกิจ","10 นาที","$7,500","Misdemeanor"],["§5.12","บุกรุกรถ","8 นาที","$5,000","Misdemeanor"],["§5.13","บุกรุกพื้นที่หวงห้าม","5 นาที","$3,750","Misdemeanor"],["§5.14","บุกรุกสถานีตำรวจ","15 นาที","$12,500","Serious Misdemeanor"],["§5.15","บุกรุกเรือนจำ","20 นาที","$20,000","Felony"],["§5.16","บุกรุกเขตหวงห้ามสนามบิน","25 นาที","$25,000","Felony"],["§5.17","ทำลายทรัพย์สิน","5 นาที","$2,500","Misdemeanor"],["§5.18","ทำลายทรัพย์สินรัฐ","12 นาที","$10,000","Misdemeanor"],["§5.19","ทำลายทรัพย์สินตำรวจ","18 นาที","$15,000","Serious Misdemeanor"],["§5.20","ทำลายทรัพย์สิน Fire/EMS","15 นาที","$12,500","Serious Misdemeanor"],["§5.21","พ่นสี/กราฟฟิตี","2 นาที","$1,250","Infraction"],["§5.22","ทำลายทรัพย์สินสาธารณะ","10 นาที","$7,500","Misdemeanor"],["§5.23","ทำลายโครงสร้างพื้นฐานสำคัญ","30 นาที","$37,500","Felony"]]},{"n":"06","t":"Vehicles & Stolen Vehicles","tth":"ยานพาหนะและรถที่ได้มาโดยมิชอบ","rows":[["§6.01","โจรกรรมยานพาหนะ","12 นาที","$10,000","Misdemeanor"],["§6.02","โจรกรรมยานพาหนะร้ายแรง","20 นาที","$15,000","Felony"],["§6.03","จี้รถ","25 นาที","$20,000","Felony"],["§6.04","จี้รถโดยมีอาวุธ","35 นาที","$30,000","Felony"],["§6.05","พยายามขโมยรถ","8 นาที","$5,000","Misdemeanor"],["§6.06","ครอบครองรถโจรกรรม","12 นาที","$10,000","Misdemeanor"],["§6.07","ครอบครองชิ้นส่วนโจรกรรม","8 นาที","$5,000","Misdemeanor"],["§6.08","ดัดแปลง VIN","10 นาที","$7,500","Misdemeanor"],["§6.09","อู่รับรถโจรกรรม","25 นาที","$25,000","Felony"],["§6.10","ขายรถโจรกรรม","15 นาที","$12,500","Serious Misdemeanor"],["§6.11","ขโมยเครื่องยนต์","10 นาที","$7,500","Misdemeanor"],["§6.12","โจรกรรม Catalytic Converter","8 นาที","$5,000","Misdemeanor"],["§6.13","ใช้รถก่ออาชญากรรม","เพิ่มโทษ","ยึดรถได้","Infraction"],["§6.14","ใช้รถหลบหนี","เพิ่มโทษ","ยึดรถได้","Infraction"]]},{"n":"07","t":"Firearms & Dangerous Weapons","tth":"อาวุธปืนและวัตถุอันตราย","rows":[["§7.01","ครอบครองปืนไม่มีใบอนุญาต","10 นาที","$7,500","Misdemeanor"],["§7.02","พกอาวุธไม่มีใบอนุญาต","10 นาที","$7,500","Misdemeanor"],["§7.03","ซ่อนอาวุธผิดกฎหมาย","12 นาที","$10,000","Misdemeanor"],["§7.04","ชักอาวุธข่มขู่","10 นาที","$7,500","Misdemeanor"],["§7.05","เล็งปืนใส่บุคคล","12 นาที","$10,000","Misdemeanor"],["§7.06","ยิงในที่สาธารณะ","10 นาที","$7,500","Misdemeanor"],["§7.07","ยิงโดยประมาท","15 นาที","$12,500","Serious Misdemeanor"],["§7.08","Drive-by Shooting","25 นาที","$25,000","Felony"],["§7.09","ยิงรถที่มีคน","30 นาที","$30,000","Felony"],["§7.10","ยิงอาคารที่มีคน","30 นาที","$30,000","Felony"],["§7.11","ยิงตำรวจ","35 นาที","$37,500","Felony"],["§7.12","ยิง Fire/EMS","30 นาที","$30,000","Felony"],["§7.13","ครอบครองปืนโจรกรรม","15 นาที","$12,500","Serious Misdemeanor"],["§7.14","ขายปืนผิดกฎหมาย","20 นาที","$20,000","Felony"],["§7.15","ค้าอาวุธ","30 นาที","$37,500","Felony"],["§7.16","ผลิตอาวุธผิดกฎหมาย","25 นาที","$25,000","Felony"],["§7.17","ครอบครองอาวุธดัดแปลง","15 นาที","$12,500","Serious Misdemeanor"],["§7.18","ลบเลขประจำอาวุธ","15 นาที","$12,500","Serious Misdemeanor"],["§7.19","ครอบครองวัตถุระเบิด","30 นาที","$37,500","Felony"],["§7.20","ใช้วัตถุระเบิด","45 นาที","$50,000","Serious Felony"],["§7.21","ขู่วางระเบิด","25 นาที","$25,000","Felony"],["§7.22","ครอบครองอุปกรณ์ตำรวจโดยมิชอบ","10 นาที","$7,500","Misdemeanor"],["§7.23","บัตรตำรวจปลอม","12 นาที","$10,000","Misdemeanor"],["§7.24","เครื่องแบบตำรวจปลอม","10 นาที","$7,500","Misdemeanor"],["§7.25","แอบอ้างเป็นตำรวจ","15 นาที","$12,500","Serious Misdemeanor"]]},{"n":"08","t":"Narcotics","tth":"ยาเสพติด","rows":[["§8.01","ครอบครองยาเสพติด","2 นาที","$1,500","Infraction"],["§8.02","ครอบครองปริมาณสูง","8 นาที","$5,000","Misdemeanor"],["§8.03","ครอบครองเพื่อจำหน่าย","10 นาที","$7,500","Misdemeanor"],["§8.04","จำหน่ายยาเสพติด","12 นาที","$10,000","Misdemeanor"],["§8.05","แจกจ่ายยาเสพติด","15 นาที","$12,500","Serious Misdemeanor"],["§8.06","ค้ายาเสพติด","25 นาที","$25,000","Felony"],["§8.07","ค้ายารายใหญ่","38 นาที","$50,000","Felony"],["§8.08","ผลิตยาเสพติด","20 นาที","$20,000","Felony"],["§8.09","ห้องแล็บยา","30 นาที","$30,000","Felony"],["§8.10","ขนส่งยา","15 นาที","$12,500","Serious Misdemeanor"],["§8.11","นำเข้ายา","25 นาที","$25,000","Felony"],["§8.12","ส่งออกยา","25 นาที","$25,000","Felony"],["§8.13","ทรัพย์สินจากยา","15 นาที","$15,000 + ริบ","Serious Misdemeanor"],["§8.14","ฟอกเงินจากยา","30 นาที","$37,500","Felony"],["§8.15","ขายยาในเขตโรงเรียน","เพิ่ม 10 นาที","+$10,000","Misdemeanor"],["§8.16","ขายยาโดยมีอาวุธ","เพิ่ม 15 นาที","—","Serious Misdemeanor"]]},{"n":"09","t":"Traffic","tth":"จราจร","rows":[["§9.01","ขับรถเร็วเกินกำหนด","—","$375","Infraction"],["§9.02","ขับเร็วรุนแรง","—","$1,000","Infraction"],["§9.03","ขับรถโดยประมาท","5 นาที","$2,500","Misdemeanor"],["§9.04","ขับรถอันตราย","8 นาที","$3,750","Misdemeanor"],["§9.05","แข่งรถบนถนน","10 นาที","$7,500 + พักใบขับขี่ 30 วัน RP","Misdemeanor"],["§9.06","แสดงความเร็ว","5 นาที","$3,750","Misdemeanor"],["§9.07","Burnout","—","$1,500","Infraction"],["§9.08","ฝ่าไฟแดง","—","$500","Infraction"],["§9.09","ฝ่าป้ายหยุด","—","$375","Infraction"],["§9.10","ไม่ให้ทาง","—","$375","Infraction"],["§9.11","ขับสวนทาง","—","$750","Infraction"],["§9.12","กลับรถผิดกฎหมาย","—","$375","Infraction"],["§9.13","เปลี่ยนเลนไม่ปลอดภัย","—","$375","Infraction"],["§9.14","ขับจี้ท้าย","—","$375","Infraction"],["§9.15","ใช้โทรศัพท์ขณะขับ","—","$500","Infraction"],["§9.16","ขับบนทางเท้า","—","$750","Infraction"],["§9.17","ขับในเขตคนเดินเท้า","—","$1,000","Infraction"],["§9.18","จอดในที่ห้ามจอด","—","$250","Infraction"],["§9.19","กีดขวางช่องฉุกเฉิน","—","$1,250","Infraction"],["§9.20","จอดขวางหัวดับเพลิง","—","$1,000","Infraction"],["§9.21","จอดช่องคนพิการ","—","$750","Infraction"],["§9.22","จอดกีดขวางแยก","—","$375","Infraction"],["§9.23","ป้ายทะเบียนปลอม","8 นาที","$5,000","Misdemeanor"],["§9.24","ไม่มีป้ายทะเบียน","—","$750","Infraction"],["§9.25","ป้ายทะเบียนไม่ตรงรถ","5 นาที","$3,750","Infraction"],["§9.26","ไม่มีทะเบียนรถ","—","$1,000","Infraction"],["§9.27","ไม่มีใบขับขี่","5 นาที","$2,500","Misdemeanor"],["§9.28","ใบขับขี่ถูกพัก","8 นาที","$3,750","Misdemeanor"],["§9.29","ใบขับขี่ถูกเพิกถอน","10 นาที","$5,000","Misdemeanor"]]},{"n":"10","t":"Driving Under the Influence","tth":"เมาแล้วขับ","rows":[["§10.01","DUI","8 นาที","$5,000","Misdemeanor"],["§10.02","DUI ซ้ำ","15 นาที","$10,000","Serious Misdemeanor"],["§10.03","DUI ทำให้บาดเจ็บ","15 นาที","$12,500","Serious Misdemeanor"],["§10.04","DUI ทำให้เสียชีวิต","35 นาที","$37,500","Felony"],["§10.05","ขับรถขณะได้รับอิทธิพลยา","10 นาที","$7,500","Misdemeanor"],["§10.06","ปฏิเสธการตรวจ","—","$2,500","Infraction"],["§10.07","จัดคนขับแทนเพื่อหลบ DUI","5 นาที","$3,750","Misdemeanor"]]},{"n":"11","t":"Evading Officers","tth":"หลบหนีเจ้าหน้าที่","rows":[["§11.01","ไม่หยุดตามคำสั่ง","5 นาที","$2,500","Misdemeanor"],["§11.02","หลบหนีด้วยเท้า","4 นาที","$2,000","Infraction"],["§11.03","หลบหนีด้วยรถ","10 นาที","$7,500","Misdemeanor"],["§11.04","หลบหนีด้วยมอเตอร์ไซค์","10 นาที","$7,500","Misdemeanor"],["§11.05","หลบหนีโดยประมาทร้ายแรง","15 นาที","$12,500","Serious Misdemeanor"],["§11.06","หลบหนีในเขตคนเดิน","18 นาที","$15,000","Serious Misdemeanor"],["§11.07","หลบหนีทำให้บาดเจ็บ","22 นาที","$20,000","Felony"],["§11.08","หลบหนีทำให้เสียชีวิต","35 นาที","$37,500","Felony"],["§11.09","หลบหนีซ้ำ","เพิ่ม 10 นาที","—","Misdemeanor"]]},{"n":"12","t":"Police & Officers","tth":"ตำรวจและเจ้าหน้าที่","rows":[["§12.01","ขัดขืนการจับกุม","5 นาที","$2,500","Misdemeanor"],["§12.02","ขัดขวางเจ้าหน้าที่","5 นาที","$2,500","Misdemeanor"],["§12.03","แทรกแซงการปฏิบัติหน้าที่","8 นาที","$5,000","Misdemeanor"],["§12.04","ช่วยผู้ต้องหาหลบหนี","12 นาที","$10,000","Misdemeanor"],["§12.05","ช่วยนักโทษหลบหนี","20 นาที","$17,500","Felony"],["§12.06","หลบหนีการควบคุม","15 นาที","$12,500","Serious Misdemeanor"],["§12.07","แหกคุก","25 นาที","$25,000","Felony"],["§12.08","แอบอ้างเป็นเจ้าหน้าที่","15 นาที","$12,500","Serious Misdemeanor"],["§12.09","บัตรราชการปลอม","12 นาที","$10,000","Misdemeanor"],["§12.10","เอกสารราชการปลอม","15 นาที","$12,500","Serious Misdemeanor"],["§12.11","ติดสินบนเจ้าหน้าที่","15 นาที","$15,000","Serious Misdemeanor"],["§12.12","รับสินบน","25 นาที","$25,000","Felony"],["§12.13","ทุจริตในหน้าที่","25 นาที","$25,000","Felony"],["§12.14","ใช้อำนาจโดยมิชอบ","20 นาที","$20,000","Felony"],["§12.15","ลักทรัพย์ของรัฐ","20 นาที","$20,000","Felony"],["§12.16","ทำลายทรัพย์สินรัฐ","15 นาที","$12,500","Serious Misdemeanor"],["§12.17","แทรกแซงการสอบสวน","12 นาที","$10,000","Misdemeanor"],["§12.18","แทรกแซงพยาน","15 นาที","$12,500","Serious Misdemeanor"],["§12.19","ข่มขู่พยาน","20 นาที","$17,500","Felony"],["§12.20","ให้การเท็จ","15 นาที","$12,500","Serious Misdemeanor"],["§12.21","สร้างหลักฐานปลอม","20 นาที","$20,000","Felony"]]},{"n":"13","t":"Court","tth":"ศาล","rows":[["§13.01","ไม่มาตามหมายศาล","5 นาที","$2,500","Misdemeanor"],["§13.02","ฝ่าฝืนคำสั่งศาล","8 นาที","$5,000","Misdemeanor"],["§13.03","ละเมิดอำนาจศาล","5 นาที","$2,500","Misdemeanor"],["§13.04","ปลอมเอกสารศาล","15 นาที","$12,500","Serious Misdemeanor"],["§13.05","ข่มขู่พยาน","20 นาที","$17,500","Felony"],["§13.06","ข่มขู่เจ้าหน้าที่ศาล","20 นาที","$17,500","Felony"],["§13.07","แทรกแซงคดี","20 นาที","$20,000","Felony"],["§13.08","สร้างพยานหลักฐานศาลปลอม","25 นาที","$25,000","Felony"],["§13.09","แอบอ้างเป็นทนาย/อัยการ/ผู้พิพากษา","15 นาที","$12,500","Serious Misdemeanor"],["§13.10","ฝ่าฝืนคำสั่งห้ามติดต่อ","8 นาที","$5,000","Misdemeanor"]]},{"n":"14","t":"Public Order","tth":"ความสงบเรียบร้อย","rows":[["§14.01","ก่อความวุ่นวาย","2 นาที","$1,250","Infraction"],["§14.02","ทะเลาะวิวาทในที่สาธารณะ","4 นาที","$2,000","Infraction"],["§14.03","รวมกลุ่มก่อความไม่สงบ","5 นาที","$2,500","Misdemeanor"],["§14.04","จลาจล","15 นาที","$12,500","Serious Misdemeanor"],["§14.05","ยุยงจลาจล","12 นาที","$10,000","Misdemeanor"],["§14.06","กีดขวางทางสาธารณะ","—","$500","Infraction"],["§14.07","ก่อเสียงรบกวน","—","$500","Infraction"],["§14.08","ก่อเหตุรำคาญ","—","$750","Infraction"],["§14.09","เข้าเขตหวงห้าม","—","$1,500","Infraction"],["§14.10","ไม่ยอมออกจากพื้นที่","5 นาที","$2,500","Misdemeanor"],["§14.11","กีดขวางที่เกิดเหตุ","8 นาที","$5,000","Misdemeanor"],["§14.12","เข้า Crime Scene โดยไม่ได้รับอนุญาต","8 นาที","$5,000","Misdemeanor"],["§14.13","ทำลาย Crime Scene","12 นาที","$10,000","Misdemeanor"]]},{"n":"15","t":"Fire & Explosives","tth":"เพลิงไหม้และวัตถุระเบิด","rows":[["§15.01","วางเพลิง","20 นาที","$17,500","Felony"],["§15.02","วางเพลิงร้ายแรง","35 นาที","$37,500","Felony"],["§15.03","พยายามวางเพลิง","12 นาที","$10,000","Misdemeanor"],["§15.04","ครอบครองระเบิด","30 นาที","$37,500","Felony"],["§15.05","ใช้ระเบิด","45 นาที","$50,000","Serious Felony"],["§15.06","ขู่วางระเบิด","25 นาที","$25,000","Felony"],["§15.07","แจ้งเหตุระเบิดเท็จ","15 นาที","$12,500","Serious Misdemeanor"],["§15.08","ก่อเพลิงโดยประมาท","10 นาที","$7,500","Misdemeanor"],["§15.09","ทำลายระบบสาธารณูปโภค","30 นาที","$37,500","Felony"],["§15.10","ทำให้คนจำนวนมากตกอยู่ในอันตราย","40 นาที","$50,000","Serious Felony"]]},{"n":"16","t":"Organized Crime","tth":"องค์กรอาชญากรรม","rows":[["§16.01","จัดตั้งองค์กรอาชญากรรม","20 นาที","$20,000","Felony"],["§16.02","สมาชิกองค์กรอาชญากรรม","10 นาที","$7,500","Misdemeanor"],["§16.03","ผู้นำองค์กรอาชญากรรม","40 นาที","$50,000","Serious Felony"],["§16.04","รับสมัครสมาชิก","10 นาที","$7,500","Misdemeanor"],["§16.05","ควบคุมพื้นที่","20 นาที","$20,000","Felony"],["§16.06","ฟอกเงินองค์กร","30 นาที","$37,500","Felony"],["§16.07","ค้ายาเป็นองค์กร","35 นาที","$50,000","Felony"],["§16.08","ค้าอาวุธเป็นองค์กร","35 นาที","$50,000","Felony"],["§16.09","ปล้นร่วมกัน","25 นาที","$25,000","Felony"],["§16.10","กรรโชกเป็นองค์กร","25 นาที","$25,000","Felony"],["§16.11","จ้างมือปืน","35 นาที","$37,500","Felony"],["§16.12","ฆ่าโดยการจ้างวาน","45 นาที","$50,000","Serious Felony"]]},{"n":"17","t":"Fraud & Financial Crime","tth":"ฉ้อโกงและการเงิน","rows":[["§17.01","ฉ้อโกง","8 นาที","$5,000","Misdemeanor"],["§17.02","ฉ้อโกงทางการเงิน","12 นาที","$10,000","Misdemeanor"],["§17.03","ขโมยข้อมูลตัวตน","12 นาที","$10,000","Misdemeanor"],["§17.04","บัตรประชาชนปลอม","10 นาที","$7,500","Misdemeanor"],["§17.05","ใบอนุญาตปลอม","10 นาที","$7,500","Misdemeanor"],["§17.06","เอกสารปลอม","10 นาที","$7,500","Misdemeanor"],["§17.07","เงินปลอม","15 นาที","$15,000","Serious Misdemeanor"],["§17.08","ฟอกเงิน","25 นาที","$25,000","Felony"],["§17.09","ฟอกเงินระดับองค์กร","40 นาที","$50,000","Serious Felony"],["§17.10","ฉ้อโกงประกัน","10 นาที","$7,500","Misdemeanor"],["§17.11","ฉ้อโกงธนาคาร","20 นาที","$20,000","Felony"],["§17.12","ฉ้อโกงดิจิทัล","15 นาที","$12,500","Serious Misdemeanor"]]},{"n":"18","t":"Cyber Crime","tth":"อาชญากรรมไซเบอร์","rows":[["§18.01","เข้าถึงระบบโดยไม่ได้รับอนุญาต","10 นาที","$7,500","Misdemeanor"],["§18.02","Hacking","15 นาที","$12,500","Serious Misdemeanor"],["§18.03","เจาะระบบตำรวจ","25 นาที","$25,000","Felony"],["§18.04","เจาะระบบรัฐบาล","25 นาที","$25,000","Felony"],["§18.05","เจาะระบบธนาคาร","30 นาที","$37,500","Felony"],["§18.06","ขโมยข้อมูล","12 นาที","$10,000","Misdemeanor"],["§18.07","ขโมยข้อมูลตำรวจ","25 นาที","$25,000","Felony"],["§18.08","แก้ไขข้อมูล MDT","20 นาที","$20,000","Felony"],["§18.09","ลบหลักฐานดิจิทัล","20 นาที","$20,000","Felony"],["§18.10","Ransomware","30 นาที","$37,500","Felony"],["§18.11","ใช้ข้อมูลส่วนบุคคลโดยมิชอบ","12 นาที","$10,000","Misdemeanor"]]},{"n":"19","t":"Business & Licensing","tth":"ธุรกิจและใบอนุญาต","rows":[["§19.01","ประกอบธุรกิจไม่มีใบอนุญาต","—","$2,500","Infraction"],["§19.02","ใบอนุญาตธุรกิจปลอม","10 นาที","$7,500","Misdemeanor"],["§19.03","ใบอนุญาตหมดอายุ","—","$1,250","Infraction"],["§19.04","ฝ่าฝืนเงื่อนไขใบอนุญาต","—","$2,500","Infraction"],["§19.05","เปิดกิจการที่ถูกสั่งปิด","10 นาที","$7,500","Misdemeanor"],["§19.06","ขายสินค้าโดยไม่มีใบอนุญาต","—","$2,500","Infraction"],["§19.07","ประกอบธุรกิจต้องห้าม","15 นาที","$12,500","Serious Misdemeanor"],["§19.08","ขายอาวุธไม่มีใบอนุญาต","20 นาที","$20,000","Misdemeanor"],["§19.09","ขายยาไม่มีใบอนุญาต","20 นาที","$20,000","Misdemeanor"],["§19.10","ธุรกิจบังหน้าอาชญากรรม","25 นาที","$25,000 + เพิกถอนใบอนุญาต","Felony"]]},{"n":"20","t":"Public Transport","tth":"ขนส่งสาธารณะ","rows":[["§20.01","แท็กซี่ไม่มีใบอนุญาต","—","$2,500","Infraction"],["§20.02","ใบอนุญาตแท็กซี่ปลอม","10 นาที","$7,500","Misdemeanor"],["§20.03","ฝ่าฝืนกฎแท็กซี่","—","$1,500","Infraction"],["§20.04","เรียกเก็บค่าโดยสารเกิน","—","$2,500","Infraction"],["§20.05","ขนส่งสาธารณะไม่มีใบอนุญาต","—","$2,500","Infraction"],["§20.06","ใช้รถฉุกเฉินโดยมิชอบ","15 นาที","$12,500","Serious Misdemeanor"],["§20.07","แอบอ้างเป็น EMS","20 นาที","$20,000","Felony"]]},{"n":"21","t":"Airport & Port","tth":"สนามบินและท่าเรือ","rows":[["§21.01","บุกรุกสนามบิน","15 นาที","$12,500","Serious Misdemeanor"],["§21.02","เข้าเขตสนามบินหวงห้าม","25 นาที","$25,000","Felony"],["§21.03","รบกวนเที่ยวบิน","35 นาที","$37,500","Felony"],["§21.04","อาวุธในเขตหวงห้าม","25 นาที","$25,000","Felony"],["§21.05","ระเบิดสนามบิน","50 นาที","$75,000","Serious Felony"],["§21.06","บุกรุกท่าเรือ","15 นาที","$12,500","Serious Misdemeanor"],["§21.07","ลักลอบขนของท่าเรือ","25 นาที","$25,000","Felony"],["§21.08","ลักลอบขนอาวุธ","40 นาที","$50,000","Serious Felony"],["§21.09","ลักลอบขนยา","35 นาที","$50,000","Felony"]]},{"n":"22","t":"Drones & Technology","tth":"โดรนและเทคโนโลยี","rows":[["§22.01","ใช้โดรนผิดกฎหมาย","—","$2,500","Infraction"],["§22.02","ใช้โดรนในพื้นที่หวงห้าม","10 นาที","$7,500","Misdemeanor"],["§22.03","โดรนในเขตสนามบิน","25 นาที","$25,000","Felony"],["§22.04","ใช้โดรนสอดแนม","12 นาที","$10,000","Misdemeanor"],["§22.05","ใช้โดรนก่ออาชญากรรม","20 นาที","$20,000","Felony"],["§22.06","โจมตีด้วยโดรน","35 นาที","$37,500","Felony"]]},{"n":"23","t":"Emergency Services","tth":"บริการฉุกเฉิน","rows":[["§23.01","แจ้งเหตุเท็จ","2 นาที","$1,500","Infraction"],["§23.02","ใช้สายฉุกเฉินในทางมิชอบ","—","$1,250","Infraction"],["§23.03","แจ้งเหตุยิงเท็จ","5 นาที","$3,750","Misdemeanor"],["§23.04","แจ้งเหตุระเบิดเท็จ","15 นาที","$12,500","Serious Misdemeanor"],["§23.05","แจ้งเหตุไฟไหม้เท็จ","8 นาที","$5,000","Misdemeanor"],["§23.06","ขัดขวาง EMS","8 นาที","$5,000","Misdemeanor"],["§23.07","ขัดขวาง Fire","8 นาที","$5,000","Misdemeanor"],["§23.08","ขัดขวางตำรวจ","8 นาที","$5,000","Misdemeanor"]]},{"n":"24","t":"Animals & Environment","tth":"สัตว์และสิ่งแวดล้อม","rows":[["§24.01","ทารุณกรรมสัตว์","5 นาที","$2,500","Misdemeanor"],["§24.02","ปล่อยสัตว์อันตรายโดยประมาท","5 นาที","$3,750","Misdemeanor"],["§24.03","จัดให้มีการต่อสู้สัตว์","12 นาที","$10,000","Misdemeanor"],["§24.04","ค้าสัตว์ผิดกฎหมาย","15 นาที","$12,500","Serious Misdemeanor"],["§24.05","ทิ้งของเสียอันตราย","15 นาที","$15,000","Serious Misdemeanor"],["§24.06","ทิ้งขยะผิดกฎหมาย","—","$1,500","Infraction"],["§24.07","ปล่อยสารพิษ","25 นาที","$25,000","Felony"],["§24.08","ทำลายทรัพยากรสาธารณะ","10 นาที","$7,500","Misdemeanor"]]},{"n":"25","t":"Additional Penalties & Forfeiture","tth":"โทษเพิ่มเติมและการริบทรัพย์","rows":[["§25.01","ยึดอาวุธ","เพิ่มเติม","ยึดอาวุธ","Infraction"],["§25.02","ยึดยาเสพติด","เพิ่มเติม","ยึดของกลาง","Infraction"],["§25.03","ริบทรัพย์จากอาชญากรรม","ศาลพิจารณา","ริบทรัพย์","Infraction"],["§25.04","ยึดรถที่ใช้ก่อคดีร้ายแรง","เพิ่มเติม","ยึดรถ","Infraction"],["§25.05","ริบรถ","ตามศาล","ริบรถ","Infraction"],["§25.06","ริบทรัพย์สิน","ตามศาล","ริบทรัพย์","Infraction"],["§25.07","พักใบอนุญาต","7–30 วัน RP","พักใบอนุญาต","Misdemeanor"],["§25.08","เพิกถอนใบอนุญาต","30–90 วัน RP","เพิกถอน","Misdemeanor"],["§25.09","พักใบอนุญาตอาวุธ","ตามคำสั่ง","พักสิทธิ","Infraction"],["§25.10","เพิกถอนใบอนุญาตอาวุธ","ตามคำสั่ง","เพิกถอน","Infraction"],["§25.11","พักใบอนุญาตธุรกิจ","ตามคำสั่ง","พักกิจการ","Infraction"],["§25.12","เพิกถอนใบอนุญาตธุรกิจ","ตามคำสั่ง","เพิกถอน","Infraction"],["§25.13","ชดใช้ผู้เสียหาย","เพิ่มเติม","Restitution","Infraction"],["§25.14","บริการสาธารณะ","ตามคำสั่ง","Community Service","Infraction"],["§25.15","คุมประพฤติ","ตามคำสั่ง","Probation","Infraction"],["§25.16","เขตห้ามเข้า","ตามคำสั่ง","Exclusion Zone","Infraction"],["§25.17","คำสั่งห้ามติดต่อ","ตามคำสั่ง","No-Contact Order","Infraction"],["§25.18","ประวัติอาชญากรรม","ตามสถานะคดี","Criminal Record","Infraction"]]},{"n":"26","t":"Aggravating Factors","tth":"เหตุเพิ่มโทษ","rows":[["§26.01","ใช้อาวุธ","เพิ่ม 10 นาที","+$10,000","Misdemeanor"],["§26.02","มีการยิง","เพิ่ม 15 นาที","+$15,000","Serious Misdemeanor"],["§26.03","ทำให้บาดเจ็บ","เพิ่ม 8 นาที","+$5,000","Misdemeanor"],["§26.04","บาดเจ็บสาหัส","เพิ่ม 12 นาที","+$10,000","Misdemeanor"],["§26.05","มีผู้เสียชีวิต","เพิ่ม 25 นาที","+$25,000","Felony"],["§26.06","ผู้เสียหายเป็นเจ้าหน้าที่","เพิ่ม 12 นาที","+$12,500","Misdemeanor"],["§26.07","ผู้เสียหายเป็น Fire/EMS","เพิ่ม 12 นาที","+$12,500","Misdemeanor"],["§26.08","ใช้รถเป็นอาวุธ","เพิ่ม 15 นาที","+$12,500","Serious Misdemeanor"],["§26.09","ร่วมกันหลายคน","เพิ่ม 8 นาที","+$7,500","Misdemeanor"],["§26.10","เกี่ยวข้องกับแก๊ง","เพิ่ม 10 นาที","+$10,000","Misdemeanor"],["§26.11","เกี่ยวข้องกับองค์กรอาชญากรรม","เพิ่ม 15 นาที","+$15,000","Serious Misdemeanor"],["§26.12","กระทำผิดซ้ำ","เพิ่ม 25%","เพิ่ม 25%","Felony"],["§26.13","ผู้กระทำผิดซ้ำเป็นนิสัย","เพิ่ม 50%","เพิ่ม 50%","Serious Felony"],["§26.14","เกิดในสถานที่ราชการ","เพิ่ม 8 นาที","—","Misdemeanor"],["§26.15","เกิดในโรงพยาบาล","เพิ่ม 8 นาที","—","Misdemeanor"],["§26.16","เกิดในสนามบิน","เพิ่ม 12 นาที","—","Misdemeanor"],["§26.17","เกิดในโรงเรียน","เพิ่ม 12 นาที","—","Misdemeanor"]]},{"n":"27","t":"Incarceration System","tth":"ระบบจำคุก","rows":[["§27.01","อัตราเวลาจำคุก","1 เดือน = 1 นาทีจริง","—","Infraction"],["§27.02","เพดานการลงโทษโดยเจ้าหน้าที่","Citation $250–10k / Misdemeanor ≤30 / Felony ≤60 / Serious ≤90","ตามประเภท","Special Crime"]]},{"n":"28","t":"Sentencing Consolidation","tth":"การรวมโทษ","rows":[["§28.01","หลายข้อหาในเหตุเดียว","ตามแต่ละข้อหา","ตามแต่ละข้อหา","Infraction"],["§28.02","ลงโทษพร้อมกัน Concurrent","ใช้เวลาสูงสุดเป็นหลัก","ตามแต่ละข้อหา","Infraction"],["§28.03","ลงโทษต่อเนื่อง Consecutive","รวมเวลาทั้งหมด","รวมค่าปรับ","Infraction"],["§28.04","คดีร้ายแรงส่งศาล","ศาลกำหนด","ศาลกำหนด","Infraction"]]},{"n":"29","t":"Evidence","tth":"หลักฐาน","rows":[["§29.01","พยานบุคคล","—","—","Infraction"],["§29.02","CCTV/Bodycam/Dashcam","—","—","Infraction"],["§29.03","หลักฐานดิจิทัล","—","—","Infraction"],["§29.04","อาวุธ","—","ยึด/บันทึก","Infraction"],["§29.05","ยาเสพติด","—","ยึด/บันทึก","Infraction"],["§29.06","เงิน","—","ยึด/คืน/ริบ","Infraction"],["§29.07","ยานพาหนะ","—","ยึด/Impound","Infraction"],["§29.08","Chain of Custody","—","บันทึกผู้รับ-ส่ง","Infraction"]]},{"n":"30","t":"Warrants & Court Authority","tth":"หมายและอำนาจศาล","rows":[["§30.01","หมายจับ","ตามหมาย","—","Infraction"],["§30.02","หมายค้น","ตามหมาย","—","Infraction"],["§30.03","หมายยึด","ตามหมาย","—","Infraction"],["§30.04","หมายเรียก","ตามหมาย","—","Infraction"],["§30.05","หมายจับผู้ไม่มาศาล","ตามหมาย","—","Infraction"],["§30.06","ค้นฉุกเฉิน","ฉุกเฉิน","—","Infraction"]]},{"n":"31","t":"Licensing","tth":"ใบอนุญาต","rows":[["§31.01","ใบขับขี่","ตามใบอนุญาต","พัก/เพิกถอน","Infraction"],["§31.02","ใบอนุญาตอาวุธ","ตามใบอนุญาต","พัก/เพิกถอน","Infraction"],["§31.03","ใบอนุญาตธุรกิจ","ตามใบอนุญาต","พัก/เพิกถอน","Infraction"],["§31.04","ใบอนุญาตแท็กซี่","ตามใบอนุญาต","พัก/เพิกถอน","Infraction"],["§31.05","ใบอนุญาตรถลาก/รถยก","ตามใบอนุญาต","พัก/เพิกถอน","Infraction"],["§31.06","ใบอนุญาตรักษาความปลอดภัย","ตามใบอนุญาต","พัก/เพิกถอน","Infraction"],["§31.07","ใบอนุญาตนักสืบ","ตามใบอนุญาต","พัก/เพิกถอน","Infraction"],["§31.08","ใบอนุญาตการแพทย์","ตามใบอนุญาต","พัก/เพิกถอน","Infraction"],["§31.09","ใบอนุญาตการบิน","ตามใบอนุญาต","พัก/เพิกถอน","Infraction"],["§31.10","ใบอนุญาตรถพาณิชย์","ตามใบอนุญาต","พัก/เพิกถอน","Infraction"]]},{"n":"32","t":"Officer Use of Force","tth":"การใช้กำลังของเจ้าหน้าที่","rows":[["§32.01","การใช้กำลังตามสมควร","ตามนโยบาย","—","Infraction"],["§32.02","Less-Lethal","ตามนโยบาย","—","Infraction"],["§32.03","Deadly Force","ตามนโยบาย","—","Infraction"],["§32.04","การช่วยเหลือทางการแพทย์","—","—","Infraction"],["§32.05","ใช้กำลังเกินกว่าเหตุ","สอบสวน","วินัย/โทษตามผลสอบ","Infraction"]]},{"n":"33","t":"Internal Officer Misconduct","tth":"ความผิดภายในของเจ้าหน้าที่","rows":[["§33.01","ทุจริตในหน้าที่","25 นาที","$25,000 + ปลด","Felony"],["§33.02","รับ/ให้สินบน","25 นาที","$25,000 + ปลด","Felony"],["§33.03","ขายข้อมูลคดี","20 นาที","$20,000 + ปลด","Felony"],["§33.04","เปิดเผยของกลาง","20 นาที","$20,000 + ปลด","Felony"],["§33.05","ขโมยของกลาง","30 นาที","$30,000 + ปลด","Felony"],["§33.06","ปลอมรายงาน","15 นาที","$12,500 + พักงาน","Serious Misdemeanor"],["§33.07","สร้างหลักฐานเท็จ","25 นาที","$25,000 + ปลด","Felony"],["§33.08","ใช้อำนาจโดยมิชอบ","20 นาที","$20,000 + พัก/ปลด","Felony"],["§33.09","ใช้ MDT โดยมิชอบ","15 นาที","$12,500","Serious Misdemeanor"],["§33.10","เปิดเผยข้อมูลลับ","15 นาที","$12,500","Serious Misdemeanor"],["§33.11","ช่วยผู้ต้องหาหลบหนี","25 นาที","$25,000 + ปลด","Felony"],["§33.12","ทำลายหลักฐาน","30 นาที","$30,000 + ปลด","Felony"],["§33.13","ข่มขู่พยาน","20 นาที","$20,000 + ปลด","Felony"],["§33.14","แทรกแซงคดี","20 นาที","$20,000","Felony"],["§33.15","อ้างคำสั่งผู้บังคับบัญชาเท็จ","15 นาที","$12,500","Serious Misdemeanor"]]},{"n":"34","t":"Administrative Penalties","tth":"โทษทางปกครอง","rows":[["§34.01","คำเตือน","0","คำเตือน","Infraction"],["§34.02","ใบสั่ง","0","$125–$1,250","Infraction"],["§34.03","ค่าปรับหนัก","0","$1,250–$5,000","Infraction"],["§34.04","พักใบอนุญาต","7–30 วัน RP","พักใบอนุญาต","Misdemeanor"],["§34.05","เพิกถอนใบอนุญาต","30–90 วัน RP","เพิกถอน","Misdemeanor"],["§34.06","ยึดรถชั่วคราว","24 ชม.–7 วัน RP","Impound","Felony"],["§34.07","ริบทรัพย์","ตามศาล","ริบ","Infraction"],["§34.08","จำคุก","ตามข้อหา","ตามข้อหา","Infraction"]]},{"n":"35","t":"Severity Levels","tth":"ระดับความรุนแรง","rows":[["§35.01","Civil","1 นาที","$125–$1,250","Infraction"],["§35.02","Infraction","0–2 นาที","$250–$2,500","Infraction"],["§35.03","Misdemeanor","5–10 นาที","$1,250–$7,500","Misdemeanor"],["§35.04","Serious Misdemeanor","15–15 นาที","$2,500–$12,500","Serious Misdemeanor"],["§35.05","Felony","20–30 นาที","$5,000–$37,500","Felony"],["§35.06","Serious Felony","40–45 นาที","$12,500–$50,000","Serious Felony"],["§35.07","Major Felony","60–60 นาที","$25,000–$100,000","Major Felony"],["§35.08","Special Crime","120+ นาที","ศาลกำหนด","Special Crime"]]},{"n":"36","t":"Required MDT Information","tth":"ข้อมูลที่ต้องลง MDT","rows":[["§36.01","เลขคดี","—","บังคับ","Infraction"],["§36.02","เลขจับกุม","—","บังคับ","Infraction"],["§36.03","ข้อมูลผู้ต้องหา","—","บังคับ","Infraction"],["§36.04","ข้อหาและมาตรา","—","บังคับ","Infraction"],["§36.05","ค่าปรับและจำคุก","—","บังคับ","Infraction"],["§36.06","ของกลาง","—","บังคับ","Infraction"],["§36.07","เจ้าหน้าที่ผู้จับกุม","—","บังคับ","Infraction"],["§36.08","หลักฐาน","—","บังคับ","Infraction"],["§36.09","พยาน","—","บังคับ","Infraction"],["§36.10","สถานะคดี OPEN/CLOSED/COURT/WARRANT","—","บังคับ","Infraction"],["§36.11","หมายเหตุ","—","บังคับ","Infraction"]]},{"n":"37","t":"Loophole Closure Provisions","tth":"บทปิดช่องโหว่","rows":[["§37.01","หลายข้อหา","ตามแต่ละข้อหา","ตามแต่ละข้อหา","Infraction"],["§37.02","ความผิดเป็นอิสระ","ตามแต่ละข้อหา","ตามแต่ละข้อหา","Infraction"],["§37.03","ความผิดระหว่างก่อเหตุ","เพิ่มตามข้อหา","เพิ่มตามข้อหา","Infraction"],["§37.04","เหตุเพิ่มโทษอาวุธ","เพิ่มโทษ","เพิ่มค่าปรับ","Infraction"],["§37.05","บทบาทผู้ร่วมกระทำ","ตามบทบาท","ตามบทบาท","Infraction"],["§37.06","ช่วยหลังเกิดเหตุ","ตามข้อหา","ตามข้อหา","Infraction"],["§37.07","หลบหนี","เพิ่มตาม §11/§12","เพิ่มตามข้อหา","Misdemeanor"],["§37.08","ทำลายหลักฐาน","เพิ่มตามมาตรา","เพิ่มตามข้อหา","Infraction"],["§37.10","ยึดยานพาหนะ","ตามศาล","ยึด/ริบ","Infraction"],["§37.11","รถเป็นอาวุธ","เพิ่ม 15 นาที","+$12,500","Serious Misdemeanor"],["§37.12","ผู้กระทำผิดซ้ำ","+25%/+50%","+25%/+50%","Felony"],["§37.13","องค์กรอาชญากรรม","เพิ่มตาม §26","เพิ่มตาม §26","Felony"],["§37.14","เหยื่อเป็นเจ้าหน้าที่","เพิ่ม 12 นาที","+$12,500","Misdemeanor"],["§37.15","มีผู้เสียชีวิต","เพิ่ม 25 นาที","+$25,000","Felony"],["§37.16","หลายผู้เสียหาย","ตามคดี","ตามคดี","Infraction"],["§37.17","พื้นที่หวงห้าม","ตามพื้นที่","ตามพื้นที่","Infraction"]]}];
+
+        const LEVEL_STYLES = {
+            'Infraction':            { badge: 'bg-slate-500/15 text-slate-300 border-slate-500/30',   bar: 'bg-slate-500' },
+            'Misdemeanor':           { badge: 'bg-amber-500/15 text-amber-300 border-amber-500/30',   bar: 'bg-amber-500' },
+            'Serious Misdemeanor':   { badge: 'bg-orange-500/15 text-orange-300 border-orange-500/30', bar: 'bg-orange-500' },
+            'Felony':                { badge: 'bg-rose-500/15 text-rose-300 border-rose-500/30',      bar: 'bg-rose-500' },
+            'Serious Felony':        { badge: 'bg-red-600/20 text-red-300 border-red-600/40',         bar: 'bg-red-600' },
+            'Major Felony':          { badge: 'bg-red-800/30 text-red-200 border-red-700/50',         bar: 'bg-red-800' },
+            'Special Crime':         { badge: 'bg-violet-500/15 text-violet-300 border-violet-500/30', bar: 'bg-violet-500' }
+        };
+
+        function levelStyle(level) {
+            return LEVEL_STYLES[level] || { badge: 'bg-gray-500/15 text-gray-300 border-gray-500/30', bar: 'bg-gray-500' };
+        }
+
+        function getLawCodesHTML() {
+            return `
+                <div class="space-y-6">
+                    <!-- Page Banner Header -->
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-police-card border border-police-border p-6 rounded-2xl shadow-xl">
+                        <div>
+                            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-scale-balanced text-indigo-500"></i> Los Santos Penal Code
+                            </h2>
+                            <p class="text-xs text-gray-400 mt-1">Full statute reference &mdash; ${LAW_CHAPTERS.reduce((a,c) => a + c.rows.length, 0)} sections across ${LAW_CHAPTERS.length} chapters. Colors indicate charge severity.</p>
+                        </div>
+                        <div class="relative flex-1 md:w-80">
+                            <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">
+                                <i class="fa-solid fa-magnifying-glass text-xs"></i>
+                            </span>
+                            <input type="text" id="law-search-input" oninput="filterLawCodes()" placeholder="Search statute code or offense..."
+                                class="w-full pl-9 pr-4 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-indigo-500">
+                        </div>
+                    </div>
+
+                    <!-- Legend -->
+                    <div class="flex flex-wrap gap-2 bg-police-card border border-police-border p-4 rounded-2xl shadow-xl">
+                        ${Object.keys(LEVEL_STYLES).map(lvl => `
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold border ${levelStyle(lvl).badge}">
+                                <span class="w-1.5 h-1.5 rounded-full ${levelStyle(lvl).bar}"></span> ${lvl}
+                            </span>
+                        `).join('')}
+                    </div>
+
+                    <!-- Chapters -->
+                    <div id="law-chapters-container" class="space-y-3"></div>
+                </div>
+            `;
+        }
+
+        function initLawCodesEvents() {
+            renderLawChapters();
+        }
+
+        function renderLawChapters(filterText = '') {
+            const container = document.getElementById('law-chapters-container');
+            if (!container) return;
+            const q = filterText.trim().toLowerCase();
+
+            const html = LAW_CHAPTERS.map(chapter => {
+                const rows = q
+                    ? chapter.rows.filter(r =>
+                        r[0].toLowerCase().includes(q) ||
+                        r[1].toLowerCase().includes(q) ||
+                        r[4].toLowerCase().includes(q))
+                    : chapter.rows;
+
+                if (rows.length === 0) return '';
+
+                const rowsHtml = rows.map(r => {
+                    const [code, offense, jail, fine, level] = r;
+                    const style = levelStyle(level);
+                    return `
+                        <div class="relative flex items-center gap-3 pl-4 pr-3 py-2.5 rounded-xl bg-gray-900/40 hover:bg-gray-900/70 border border-gray-800/80 transition-all overflow-hidden">
+                            <span class="absolute left-0 top-0 bottom-0 w-1 ${style.bar}"></span>
+                            <span class="font-mono text-[11px] text-indigo-400 font-bold w-16 shrink-0">${escapeHtml(code)}</span>
+                            <span class="flex-1 text-xs text-gray-200 font-medium min-w-[140px]">${escapeHtml(offense)}</span>
+                            <span class="hidden sm:flex items-center gap-1.5 text-[11px] text-gray-400 w-28 shrink-0">
+                                <i class="fa-regular fa-clock text-[10px] text-gray-500"></i> ${escapeHtml(jail)}
+                            </span>
+                            <span class="hidden md:flex items-center gap-1.5 text-[11px] text-emerald-400 font-mono w-36 shrink-0 truncate" title="${escapeHtml(fine)}">
+                                <i class="fa-solid fa-sack-dollar text-[10px] text-emerald-600"></i> ${escapeHtml(fine)}
+                            </span>
+                            <span class="inline-flex items-center justify-center px-2 py-1 rounded-full text-[10px] font-semibold border ${style.badge} shrink-0 whitespace-nowrap">
+                                ${escapeHtml(level)}
+                            </span>
+                        </div>
+                    `;
+                }).join('');
+
+                return `
+                    <details class="group bg-police-card border border-police-border rounded-2xl shadow-xl overflow-hidden" ${q ? 'open' : ''}>
+                        <summary class="cursor-pointer list-none px-6 py-4 flex items-center justify-between hover:bg-gray-900/50 transition-all select-none">
+                            <div class="flex items-center gap-3">
+                                <span class="w-8 h-8 rounded-xl bg-indigo-600/10 border border-indigo-500/20 text-indigo-400 text-xs font-bold font-mono flex items-center justify-center">${escapeHtml(chapter.n)}</span>
+                                <div>
+                                    <h3 class="font-bold text-sm text-white group-hover:text-indigo-400 transition-colors">${escapeHtml(chapter.t)}</h3>
+                                    <p class="text-[11px] text-gray-400">${escapeHtml(chapter.tth)} &mdash; ${rows.length} ${rows.length === 1 ? 'statute' : 'statutes'}</p>
+                                </div>
+                            </div>
+                            <i class="fa-solid fa-chevron-down text-xs text-gray-500 group-open:rotate-180 transition-transform"></i>
+                        </summary>
+                        <div class="p-4 pt-0 space-y-2 border-t border-police-border/50">
+                            ${rowsHtml}
+                        </div>
+                    </details>
+                `;
+            }).join('');
+
+            container.innerHTML = html || `
+                <div class="bg-police-card border border-police-border p-12 text-center text-gray-500 rounded-2xl">
+                    <i class="fa-solid fa-scale-unbalanced text-3xl mb-2 block opacity-40"></i>
+                    No penal code section matched "${escapeHtml(filterText)}"
+                </div>
+            `;
+        }
+
+        function filterLawCodes() {
+            const val = document.getElementById('law-search-input')?.value || '';
+            renderLawChapters(val);
+        }
+
+
+        // ============ INVESTIGATION CASE FILE MODULE ============
+        function getStoredInvestigations() {
+            return JSON.parse(localStorage.getItem(STORAGE_KEYS.INVESTIGATIONS)) || [];
+        }
+
+        function getInvestigationListHTML() {
+            return `
+                <div class="space-y-6">
+                    <!-- Banner Header -->
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-police-card border border-police-border p-6 rounded-2xl shadow-xl">
+                        <div>
+                            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-folder-closed text-indigo-500"></i> Active & Historical Case Files
+                            </h2>
+                            <p class="text-xs text-gray-400 mt-1">Investigative case management database &mdash; Sheriff Department</p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <div class="relative flex-1 md:w-64">
+                                <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">
+                                    <i class="fa-solid fa-magnifying-glass text-xs"></i>
+                                </span>
+                                <input type="text" id="investigation-search-input" onkeyup="filterInvestigationsList()" placeholder="Search Case ID, Lead, Crime..." 
+                                    class="w-full pl-9 pr-4 py-2 bg-gray-900 border border-gray-700 rounded-xl text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-indigo-500">
+                            </div>
+                            <button onclick="setActiveTab('create-investigation')" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl shadow-md transition-all whitespace-nowrap flex items-center gap-1.5">
+                                <i class="fa-solid fa-plus"></i> New Case File
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Cases Table -->
+                    <div class="bg-police-card border border-police-border rounded-2xl shadow-xl overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-gray-900/80 border-b border-police-border text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+                                        <th class="py-3.5 px-4">Case # / Date</th>
+                                        <th class="py-3.5 px-4">Crime Type</th>
+                                        <th class="py-3.5 px-4">Location</th>
+                                        <th class="py-3.5 px-4">Lead Detective</th>
+                                        <th class="py-3.5 px-4">Suspect</th>
+                                        <th class="py-3.5 px-4">Status</th>
+                                        <th class="py-3.5 px-4 text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="investigations-table-body" class="divide-y divide-gray-800 text-sm">
+                                    <!-- Populated via JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Detail View Modal -->
+                <div id="inv-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md hidden items-center justify-center p-4 overflow-y-auto">
+                    <div class="bg-police-card border border-police-border w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden my-8 transform transition-all">
+                        <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 px-6 py-4 border-b border-police-border flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 flex items-center justify-center text-lg">
+                                    <i class="fa-solid fa-folder-open"></i>
+                                </div>
+                                <div>
+                                    <h3 class="font-bold text-white text-base leading-none">CASE FILE <span id="inv-modal-id" class="text-indigo-400 font-mono"></span></h3>
+                                    <span class="text-[11px] text-gray-400 uppercase tracking-wider font-semibold">LOS SANTOS SHERIFF'S DEPARTMENT</span>
+                                </div>
+                            </div>
+                            <button onclick="closeInvModal()" class="text-gray-400 hover:text-white transition-colors">
+                                <i class="fa-solid fa-xmark text-xl"></i>
+                            </button>
+                        </div>
+                        <div class="p-6 space-y-6 text-xs max-h-[75vh] overflow-y-auto" id="inv-modal-content">
+                            <!-- Injected dynamically -->
+                        </div>
+                        <div class="px-6 py-4 bg-gray-900/80 border-t border-police-border flex justify-end gap-3">
+                            <button onclick="closeInvModal()" class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white text-xs font-semibold rounded-xl transition-all">
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function initInvestigationListEvents() {
+            renderInvestigationsTable();
+        }
+
+        function renderInvestigationsTable(filterText = '') {
+            const tbody = document.getElementById('investigations-table-body');
+            if (!tbody) return;
+
+            const cases = getStoredInvestigations().map(normalizeCase);
+            const q = filterText.toLowerCase();
+            const filtered = cases.filter(c => {
+                const suspectNames = c.suspects.map(s => s.name).join(' ');
+                return (c.id && c.id.toLowerCase().includes(q)) ||
+                    (c.crimeType && c.crimeType.toLowerCase().includes(q)) ||
+                    (c.leadDetective && c.leadDetective.toLowerCase().includes(q)) ||
+                    suspectNames.toLowerCase().includes(q) ||
+                    (c.location && c.location.toLowerCase().includes(q));
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="py-12 text-center text-gray-500">
+                            <i class="fa-solid fa-magnifying-glass text-3xl mb-2 block opacity-40"></i>
+                            No investigation case files found
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(c => {
+                const statusColor = c.status.includes('ปิดคดี') ? 'text-emerald-400 border-emerald-500/30' :
+                                    c.status.includes('หมดอายุความ') ? 'text-gray-400 border-gray-500/30' :
+                                    'text-indigo-400 border-indigo-500/30';
+                const suspectDisplay = c.suspects.length
+                    ? c.suspects.map(s => s.name).filter(Boolean).join(', ') + (c.suspects.length > 1 ? ` (${c.suspects.length})` : '')
+                    : 'ไม่ระบุ';
+                const statusOptionsHtml = CASE_STATUSES.map(s => `<option value="${escapeHtml(s)}" ${c.status === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('');
+                return `
+                    <tr class="hover:bg-gray-800/40 transition-all">
+                        <td class="py-4 px-4 font-mono text-xs">
+                            <span class="text-indigo-400 font-bold block">${escapeHtml(c.id)}</span>
+                            <span class="text-gray-500 text-[11px]">${escapeHtml(c.reportDate)}</span>
+                        </td>
+                        <td class="py-4 px-4 font-medium text-gray-200">${escapeHtml(c.crimeType === 'อื่นๆ' ? c.crimeTypeOther : c.crimeType)}</td>
+                        <td class="py-4 px-4 text-gray-300 text-xs max-w-xs truncate">${escapeHtml(c.location)}</td>
+                        <td class="py-4 px-4 text-gray-300 text-xs">${escapeHtml(c.leadDetective)}</td>
+                        <td class="py-4 px-4 font-semibold text-police-gold text-xs max-w-[160px] truncate" title="${escapeHtml(suspectDisplay)}">${escapeHtml(suspectDisplay)}</td>
+                        <td class="py-4 px-4">
+                            <select onchange="quickUpdateStatus('${c.id}', this.value)" title="Change case status" class="bg-gray-900 border ${statusColor} rounded-full px-2.5 py-1 text-[10px] font-semibold focus:outline-none cursor-pointer">
+                                ${statusOptionsHtml}
+                            </select>
+                        </td>
+                        <td class="py-4 px-4 text-center">
+                            <div class="flex items-center justify-center gap-1.5">
+                                <button onclick="viewInvestigationDetail('${c.id}')" title="View Full File" class="w-8 h-8 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 flex items-center justify-center transition-all text-sm">
+                                    👁️
+                                </button>
+                                <button onclick="setActiveTab('edit-investigation', '${c.id}')" title="Edit Case" class="w-8 h-8 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 flex items-center justify-center transition-all text-sm">
+                                    <i class="fa-solid fa-pen"></i>
+                                </button>
+                                <button onclick="deleteInvestigation('${c.id}')" title="Delete Case" class="w-8 h-8 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 flex items-center justify-center transition-all text-sm">
+                                    🗑️
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Quick status change directly from the case list, without opening the full editor
+        function quickUpdateStatus(id, newStatus) {
+            const cases = getStoredInvestigations();
+            const idx = cases.findIndex(c => c.id === id);
+            if (idx === -1) return;
+            cases[idx].status = newStatus;
+            localStorage.setItem(STORAGE_KEYS.INVESTIGATIONS, JSON.stringify(cases));
+            renderInvestigationsTable(document.getElementById('investigation-search-input')?.value || '');
+            showToast(`อัปเดตสถานะคดี #${id} เรียบร้อยแล้ว`, 'success');
+        }
+
+        function filterInvestigationsList() {
+            const val = document.getElementById('investigation-search-input')?.value || '';
+            renderInvestigationsTable(val);
+        }
+
+        function viewInvestigationDetail(id) {
+            const cases = getStoredInvestigations();
+            let c = cases.find(item => item.id === id);
+            if (!c) return;
+            c = normalizeCase(c);
+
+            document.getElementById('inv-modal-id').innerText = `#${c.id}`;
+
+            const actionsList = Array.isArray(c.actions) ? c.actions.map(a => `<li class="ml-4 list-disc">${escapeHtml(a)}</li>`).join('') : '';
+
+            const victimsHtml = c.victims.length ? c.victims.map((v, i) => `
+                <div class="pl-4 ${i > 0 ? 'mt-2 pt-2 border-t border-gray-800' : ''}">
+                    <div>- ชื่อ-นามสกุล: <span class="text-white">${escapeHtml(v.name || '-')}</span></div>
+                    <div>- ข้อมูลติดต่อ: <span class="text-white">${escapeHtml(v.contact || '-')}</span></div>
+                    <div>- บทบาท: <span class="text-white">${escapeHtml(v.role || '-')}</span></div>
+                    <div>- บาดแผล/ความเสียหาย: <span class="text-white">${escapeHtml(v.injury || '-')}</span></div>
+                </div>
+            `).join('') : '<div class="pl-4 text-gray-500">- ไม่ระบุ -</div>';
+
+            const suspectsHtml = c.suspects.length ? c.suspects.map((s, i) => `
+                <div class="pl-4 ${i > 0 ? 'mt-2 pt-2 border-t border-gray-800' : ''}">
+                    <div>- ชื่อ-นามสกุล / ฉายา: <span class="text-white">${escapeHtml(s.name || '-')}</span></div>
+                    <div>- รูปพรรณสันฐาน: <span class="text-white">${escapeHtml(s.description || '-')}</span></div>
+                    <div>- ข้อมูลติดต่อ: <span class="text-white">${escapeHtml(s.contact || '-')}</span></div>
+                    <div>- สถานที่พบเห็น: <span class="text-white">${escapeHtml(s.locationSeen || '-')}</span></div>
+                </div>
+            `).join('') : '<div class="pl-4 text-gray-500">- ไม่ระบุ -</div>';
+
+            const witnessesHtml = c.witnesses.length ? c.witnesses.map((w, i) => `
+                <div class="pl-4 ${i > 0 ? 'mt-2 pt-2 border-t border-gray-800' : ''}">
+                    <div>- ชื่อ-นามสกุล: <span class="text-white">${escapeHtml(w.name || '-')}</span></div>
+                    <div>- ข้อมูลติดต่อ: <span class="text-white">${escapeHtml(w.contact || '-')}</span></div>
+                    <div>- คำให้การเบื้องต้น: <span class="text-white">${escapeHtml(w.statement || '-')}</span></div>
+                </div>
+            `).join('') : '<div class="pl-4 text-gray-500">- ไม่ระบุ -</div>';
+
+            document.getElementById('inv-modal-content').innerHTML = `
+                <div class="font-mono text-gray-300 bg-gray-950 p-6 rounded-xl border border-gray-800 space-y-4">
+                    <div class="text-center font-bold text-white border-b border-gray-700 pb-3">
+                        ==================================================<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LOS SANTOS SHERIFF'S DEPARTMENT<br>
+                        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;INVESTIGATIVE REPORT<br>
+                        ==================================================
+                    </div>
+
+                    <div>
+                        <div class="text-indigo-400 font-bold">[ ส่วนที่ 1: ข้อมูลเบื้องต้น (General Information) ]</div>
+                        <div>- วันที่ออกรายงาน: <span class="text-white">${escapeHtml(c.reportDate)}</span></div>
+                        <div>- เลขที่คดี (Case ID): <span class="text-white">${escapeHtml(c.id)}</span></div>
+                        <div>- ชื่อผู้สืบสวนหลัก (Lead Detective): <span class="text-white">${escapeHtml(c.leadDetective)}</span></div>
+                        <div>- เจ้าหน้าที่ผู้ร่วมสืบสวน (Assisting Officers): <span class="text-white">${escapeHtml(c.assistingOfficers || '-')}</span></div>
+                        <div>- ประเภทคดี (Crime Type): <span class="text-white">${escapeHtml(c.crimeType === 'อื่นๆ' ? c.crimeTypeOther : c.crimeType)}</span></div>
+                        <div>- สถานที่เกิดเหตุ (Location): <span class="text-white">${escapeHtml(c.location)}</span></div>
+                        <div>- วัน-เวลาที่เกิดเหตุ (Date/Time): <span class="text-white">${escapeHtml(c.incidentDateTime)}</span></div>
+                    </div>
+
+                    <div>
+                        <div class="text-indigo-400 font-bold">[ ส่วนที่ 2: ข้อมูลผู้เกี่ยวข้อง (Involved Parties) ]</div>
+                        <div>1. ผู้เสียหาย / เหยื่อ (Victim/s):</div>
+                        ${victimsHtml}
+                        <div class="mt-2">2. ผู้ต้องสงสัย (Suspect/s):</div>
+                        ${suspectsHtml}
+                        <div class="mt-2">3. พยาน (Witnesses):</div>
+                        ${witnessesHtml}
+                    </div>
+
+                    <div>
+                        <div class="text-indigo-400 font-bold">[ ส่วนที่ 3: รายละเอียดการสืบสวน (Investigative Details) ]</div>
+                        <div>- บันทึกย่อเหตุการณ์ (Case Summary):</div>
+                        <blockquote class="border-l-2 border-indigo-500 pl-3 my-1 italic text-gray-200">
+                            ${escapeHtml(c.summary)}
+                        </blockquote>
+                        <div>- หลักฐานที่ยึดได้ (Evidence Collected):</div>
+                        <div class="pl-2 whitespace-pre-line text-white">${escapeHtml(c.evidence || '-')}</div>
+                    </div>
+
+                    <div>
+                        <div class="text-indigo-400 font-bold">[ ส่วนที่ 4: การดำเนินการและสรุปผล (Actions & Conclusion) ]</div>
+                        <div>- ขั้นตอนการสืบสวนที่ทำไปแล้ว:</div>
+                        <ul class="text-white">
+                            ${actionsList || '<li class="ml-4 list-disc">-</li>'}
+                        </ul>
+                        <div class="mt-2">- บันทึกการสืบสวน / Timeline:</div>
+                        <div class="pl-2 whitespace-pre-line text-white">${escapeHtml(c.investigationNotes || '-')}</div>
+                        <div class="mt-2">- สถานะคดีปัจจุบัน (Case Status): <span class="text-police-gold font-bold">${escapeHtml(c.status)}</span></div>
+                    </div>
+
+                    <div class="pt-4 border-t border-gray-800">
+                        --------------------------------------------------<br>
+                        ลายมือชื่อผู้รายงาน: <span class="text-white font-bold">${escapeHtml(c.signature || c.leadDetective)}</span><br>
+                        ตำแหน่ง: <span class="text-white">${escapeHtml(c.position || 'Detective')}</span><br>
+                        ==================================================
+                    </div>
+                </div>
+            `;
+
+            const modal = document.getElementById('inv-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeInvModal() {
+            const modal = document.getElementById('inv-modal');
+            modal.classList.remove('flex');
+            modal.classList.add('hidden');
+        }
+
+        function deleteInvestigation(id) {
+            if (!confirm(`Are you sure you want to permanently purge Case File #${id}?`)) return;
+            let cases = getStoredInvestigations();
+            cases = cases.filter(c => c.id !== id);
+            localStorage.setItem(STORAGE_KEYS.INVESTIGATIONS, JSON.stringify(cases));
+            renderInvestigationsTable();
+            showToast('Case file purged from database', 'success');
+        }
+
+        // ============ DYNAMIC MULTI-PARTY ROW TEMPLATES (Victims / Suspects / Witnesses) ============
+
+        function victimRowHTML(v = {}) {
+            return `
+                <div class="victim-row bg-gray-900/40 p-4 rounded-xl border border-gray-800 space-y-3 relative">
+                    <button type="button" onclick="this.closest('.victim-row').remove()" title="ลบผู้เสียหายรายนี้" class="absolute top-3 right-3 text-gray-500 hover:text-rose-400 transition-colors">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pr-6">
+                        <div>
+                            <label class="block text-gray-400 mb-1">ชื่อ-นามสกุล:</label>
+                            <input type="text" class="victim-name w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-indigo-500" placeholder="ชื่อ-นามสกุล ผู้เสียหาย" value="${escapeHtml(v.name || '')}">
+                        </div>
+                        <div>
+                            <label class="block text-gray-400 mb-1">ข้อมูลติดต่อ:</label>
+                            <input type="text" class="victim-contact w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-indigo-500" placeholder="เบอร์โทรศัพท์ / ช่องทางติดต่อ" value="${escapeHtml(v.contact || '')}">
+                        </div>
+                        <div>
+                            <label class="block text-gray-400 mb-1">บทบาท:</label>
+                            <input type="text" class="victim-role w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-indigo-500" placeholder="เช่น เจ้าของทรัพย์สิน / ผู้ถูกทำร้าย" value="${escapeHtml(v.role || '')}">
+                        </div>
+                        <div>
+                            <label class="block text-gray-400 mb-1">บาดแผล/ความเสียหาย:</label>
+                            <input type="text" class="victim-injury w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-indigo-500" placeholder="ระบุบาดแผลหรือความเสียหายที่เกิดขึ้น" value="${escapeHtml(v.injury || '')}">
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function suspectRowHTML(s = {}) {
+            return `
+                <div class="suspect-row bg-gray-900/40 p-4 rounded-xl border border-gray-800 space-y-3 relative">
+                    <button type="button" onclick="this.closest('.suspect-row').remove()" title="ลบผู้ต้องสงสัยรายนี้" class="absolute top-3 right-3 text-gray-500 hover:text-rose-400 transition-colors">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pr-6">
+                        <div>
+                            <label class="block text-gray-400 mb-1">ชื่อ-นามสกุล / ฉายา:</label>
+                            <input type="text" class="suspect-name w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-indigo-500" placeholder="ชื่อ-นามสกุล / ฉายา" value="${escapeHtml(s.name || '')}">
+                        </div>
+                        <div>
+                            <label class="block text-gray-400 mb-1">รูปพรรณสันฐาน:</label>
+                            <input type="text" class="suspect-description w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-indigo-500" placeholder="ส่วนสูง / รูปร่าง / เสื้อผ้า / ลักษณะเด่น" value="${escapeHtml(s.description || '')}">
+                        </div>
+                        <div>
+                            <label class="block text-gray-400 mb-1">ข้อมูลติดต่อ:</label>
+                            <input type="text" class="suspect-contact w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-indigo-500" placeholder="เบอร์โทรศัพท์ / ช่องทางติดต่อ (ถ้าทราบ)" value="${escapeHtml(s.contact || '')}">
+                        </div>
+                        <div>
+                            <label class="block text-gray-400 mb-1">สถานที่พบเห็น:</label>
+                            <input type="text" class="suspect-location w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-indigo-500" placeholder="สถานที่พบเห็นล่าสุด / ยานพาหนะที่ใช้" value="${escapeHtml(s.locationSeen || '')}">
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function witnessRowHTML(w = {}) {
+            return `
+                <div class="witness-row bg-gray-900/40 p-4 rounded-xl border border-gray-800 space-y-3 relative">
+                    <button type="button" onclick="this.closest('.witness-row').remove()" title="ลบพยานรายนี้" class="absolute top-3 right-3 text-gray-500 hover:text-rose-400 transition-colors">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pr-6">
+                        <div>
+                            <label class="block text-gray-400 mb-1">ชื่อ-นามสกุล:</label>
+                            <input type="text" class="witness-name w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-indigo-500" placeholder="ชื่อ-นามสกุล พยาน" value="${escapeHtml(w.name || '')}">
+                        </div>
+                        <div>
+                            <label class="block text-gray-400 mb-1">ข้อมูลติดต่อ:</label>
+                            <input type="text" class="witness-contact w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-indigo-500" placeholder="เบอร์โทรศัพท์ / ช่องทางติดต่อ" value="${escapeHtml(w.contact || '')}">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="block text-gray-400 mb-1">คำให้การเบื้องต้น:</label>
+                            <input type="text" class="witness-statement w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-gray-200 focus:outline-none focus:border-indigo-500" placeholder="สรุปคำให้การเบื้องต้นของพยาน" value="${escapeHtml(w.statement || '')}">
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function addVictimRow() {
+            document.getElementById('victims-container').insertAdjacentHTML('beforeend', victimRowHTML());
+        }
+        function addSuspectRow() {
+            document.getElementById('suspects-container').insertAdjacentHTML('beforeend', suspectRowHTML());
+        }
+        function addWitnessRow() {
+            document.getElementById('witnesses-container').insertAdjacentHTML('beforeend', witnessRowHTML());
+        }
+
+        // Reads all rows currently in a container back into an array of plain objects
+        function collectRows(containerId, rowSelector, fieldMap) {
+            const container = document.getElementById(containerId);
+            if (!container) return [];
+            return Array.from(container.querySelectorAll(rowSelector)).map(row => {
+                const obj = {};
+                Object.entries(fieldMap).forEach(([key, cls]) => {
+                    obj[key] = row.querySelector('.' + cls)?.value.trim() || '';
+                });
+                return obj;
+            }).filter(obj => Object.values(obj).some(v => v)); // drop fully-empty rows
+        }
+
+        function getInvestigationFormHTML(editId) {
+            const user = getCurrentUser();
+            const isEdit = !!editId;
+            const existing = isEdit ? getStoredInvestigations().find(c => c.id === editId) : null;
+            const c = existing ? normalizeCase(existing) : null;
+
+            const today = new Date().toISOString().substring(0, 10);
+            const randomCaseId = 'CR-' + Math.floor(100000 + Math.random() * 900000);
+
+            return `
+                <div class="max-w-4xl mx-auto space-y-6">
+                    <!-- Header Banner -->
+                    <div class="bg-police-card border border-police-border p-6 rounded-2xl shadow-xl flex items-center justify-between">
+                        <div>
+                            <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-file-signature text-indigo-500"></i> LOS SANTOS SHERIFF'S DEPARTMENT
+                            </h2>
+                            <p class="text-xs text-gray-400 mt-1">${isEdit ? `EDIT CASE FILE &mdash; #${escapeHtml(editId)}` : 'INVESTIGATIVE REPORT FORM'}</p>
+                        </div>
+                        <button type="button" onclick="setActiveTab('investigation-list')" class="px-3.5 py-2 bg-gray-800 hover:bg-gray-700 text-white text-xs font-semibold rounded-xl transition-all">
+                            Back
+                        </button>
+                    </div>
+
+                    <!-- Investigative Report Form -->
+                    <form onsubmit="handleCreateInvestigation(event, ${isEdit ? `'${editId}'` : 'null'})" class="bg-police-card border border-police-border rounded-2xl shadow-xl p-6 lg:p-8 space-y-6 text-xs">
+                        
+                        <div class="text-center font-mono text-xs text-gray-400 border-b border-gray-800 pb-4 tracking-widest">
+                            ==================================================<br>
+                            LOS SANTOS SHERIFF'S DEPARTMENT INVESTIGATIVE REPORT<br>
+                            ==================================================
+                        </div>
+
+                        <!-- [ ส่วนที่ 1: ข้อมูลเบื้องต้น (General Information) ] -->
+                        <div class="space-y-4">
+                            <h3 class="text-sm font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-2 border-b border-gray-800 pb-2">
+                                [ ส่วนที่ 1: ข้อมูลเบื้องต้น (General Information) ]
+                            </h3>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-gray-400 font-semibold mb-1">- วันที่ออกรายงาน [DD/MM/YYYY]:</label>
+                                    <input type="text" id="inv-report-date" required value="${escapeHtml(c ? c.reportDate : today)}" placeholder="DD/MM/YYYY" class="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-gray-200 focus:outline-none focus:border-indigo-500">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-400 font-semibold mb-1">- เลขที่คดี (Case ID) [CR-XXXXXX]:</label>
+                                    <input type="text" id="inv-case-id" required value="${escapeHtml(c ? c.id : randomCaseId)}" placeholder="CR-XXXXXX" ${isEdit ? 'readonly' : ''} class="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-gray-200 focus:outline-none focus:border-indigo-500 font-mono ${isEdit ? 'opacity-60 cursor-not-allowed' : ''}">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-400 font-semibold mb-1">- ชื่อผู้สืบสวนหลัก (Lead Detective) [ยศ และ ชื่อ-นามสกุล]:</label>
+                                    <input type="text" id="inv-lead" required value="${escapeHtml(c ? c.leadDetective : user.name)}" placeholder="ยศ และ ชื่อ-นามสกุล" class="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-gray-200 focus:outline-none focus:border-indigo-500">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-400 font-semibold mb-1">- เจ้าหน้าที่ผู้ร่วมสืบสวน (Assisting Officers):</label>
+                                    <input type="text" id="inv-assisting" value="${escapeHtml(c ? c.assistingOfficers : '')}" placeholder="ระบุเจ้าหน้าที่ผู้ร่วมสืบสวน หรือ - " class="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-gray-200 focus:outline-none focus:border-indigo-500">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-400 font-semibold mb-1">- ประเภทคดี (Crime Type):</label>
+                                    <select id="inv-crime-type" onchange="toggleCrimeOtherInput()" required class="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-gray-200 focus:outline-none focus:border-indigo-500">
+                                        <option value="" ${c && c.crimeType ? '' : 'disabled selected'}>-- เลือกประเภทคดี --</option>
+                                        <option value="ฆาตกรรม" ${c && c.crimeType === 'ฆาตกรรม' ? 'selected' : ''}>ฆาตกรรม</option>
+                                        <option value="ยาเสพติด" ${c && c.crimeType === 'ยาเสพติด' ? 'selected' : ''}>ยาเสพติด</option>
+                                        <option value="ปล้นทรัพย์" ${c && c.crimeType === 'ปล้นทรัพย์' ? 'selected' : ''}>ปล้นทรัพย์</option>
+                                        <option value="แก๊งอาชญากรรม" ${c && c.crimeType === 'แก๊งอาชญากรรม' ? 'selected' : ''}>แก๊งอาชญากรรม</option>
+                                        <option value="อื่นๆ" ${c && c.crimeType === 'อื่นๆ' ? 'selected' : ''}>อื่นๆ (ระบุ)</option>
+                                    </select>
+                                </div>
+                                <div id="inv-crime-other-container" class="${c && c.crimeType === 'อื่นๆ' ? '' : 'hidden'}">
+                                    <label class="block text-gray-400 font-semibold mb-1">ระบุประเภทคดีอื่นๆ:</label>
+                                    <input type="text" id="inv-crime-other" value="${escapeHtml(c ? c.crimeTypeOther : '')}" placeholder="ระบุประเภทคดีเพิ่มเติม..." class="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-gray-200 focus:outline-none focus:border-indigo-500">
+                                </div>
+                                <div>
+                                    <label class="block text-gray-400 font-semibold mb-1">- วัน-เวลาที่เกิดเหตุ (Date/Time):</label>
+                                    <input type="text" id="inv-datetime" required value="${escapeHtml(c ? c.incidentDateTime : '')}" placeholder="วันที่ และ เวลาโดยประมาณ" class="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-gray-200 focus:outline-none focus:border-indigo-500">
+                                </div>
+                                <div class="sm:col-span-2">
+                                    <label class="block text-gray-400 font-semibold mb-1">- สถานที่เกิดเหตุ (Location):</label>
+                                    <input type="text" id="inv-location" required value="${escapeHtml(c ? c.location : '')}" placeholder="ระบุชื่อถนน / เขต / จุดสังเกต" class="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-gray-200 focus:outline-none focus:border-indigo-500">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- [ ส่วนที่ 2: ข้อมูลผู้เกี่ยวข้อง (Involved Parties) ] -->
+                        <div class="space-y-4">
+                            <h3 class="text-sm font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-2 border-b border-gray-800 pb-2">
+                                [ ส่วนที่ 2: ข้อมูลผู้เกี่ยวข้อง (Involved Parties) ]
+                            </h3>
+                            
+                            <!-- 1. ผู้เสียหาย / เหยื่อ -->
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="font-bold text-gray-200 block">1. ผู้เสียหาย / เหยื่อ (Victim/s):</span>
+                                    <button type="button" onclick="addVictimRow()" class="px-2.5 py-1 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 rounded-lg text-[11px] font-semibold flex items-center gap-1">
+                                        <i class="fa-solid fa-plus"></i> เพิ่มผู้เสียหาย
+                                    </button>
+                                </div>
+                                <div id="victims-container" class="space-y-3">
+                                    ${(c && c.victims.length ? c.victims : [{ name: '', contact: '', role: '', injury: '' }]).map(v => victimRowHTML(v)).join('')}
+                                </div>
+                            </div>
+
+                            <!-- 2. ผู้ต้องสงสัย -->
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="font-bold text-gray-200 block">2. ผู้ต้องสงสัย (Suspect/s):</span>
+                                    <button type="button" onclick="addSuspectRow()" class="px-2.5 py-1 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 rounded-lg text-[11px] font-semibold flex items-center gap-1">
+                                        <i class="fa-solid fa-plus"></i> เพิ่มผู้ต้องสงสัย
+                                    </button>
+                                </div>
+                                <div id="suspects-container" class="space-y-3">
+                                    ${(c && c.suspects.length ? c.suspects : [{ name: '', description: '', contact: '', locationSeen: '' }]).map(s => suspectRowHTML(s)).join('')}
+                                </div>
+                            </div>
+
+                            <!-- 3. พยาน -->
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="font-bold text-gray-200 block">3. พยาน (Witnesses):</span>
+                                    <button type="button" onclick="addWitnessRow()" class="px-2.5 py-1 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 rounded-lg text-[11px] font-semibold flex items-center gap-1">
+                                        <i class="fa-solid fa-plus"></i> เพิ่มพยาน
+                                    </button>
+                                </div>
+                                <div id="witnesses-container" class="space-y-3">
+                                    ${(c && c.witnesses.length ? c.witnesses : [{ name: '', contact: '', statement: '' }]).map(w => witnessRowHTML(w)).join('')}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- [ ส่วนที่ 3: รายละเอียดการสืบสวน (Investigative Details) ] -->
+                        <div class="space-y-4">
+                            <h3 class="text-sm font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-2 border-b border-gray-800 pb-2">
+                                [ ส่วนที่ 3: รายละเอียดการสืบสวน (Investigative Details) ]
+                            </h3>
+                            <div>
+                                <label class="block text-gray-400 font-semibold mb-1">- บันทึกย่อเหตุการณ์ (Case Summary):</label>
+                                <textarea id="inv-summary" required rows="4" placeholder="กรอกรายละเอียดบันทึกย่อเหตุการณ์..." class="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-gray-200 focus:outline-none focus:border-indigo-500">${escapeHtml(c ? c.summary : '')}</textarea>
+                            </div>
+                            <div>
+                                <label class="block text-gray-400 font-semibold mb-1">- หลักฐานที่ยึดได้ (Evidence Collected):</label>
+                                <textarea id="inv-evidence" rows="3" placeholder="1. [...]&#10;2. [...]&#10;3. [...]" class="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-gray-200 focus:outline-none focus:border-indigo-500 font-mono text-xs">${escapeHtml(c ? c.evidence : '')}</textarea>
+                            </div>
+                        </div>
+
+                        <!-- [ ส่วนที่ 4: การดำเนินการและสรุปผล (Actions & Conclusion) ] -->
+                        <div class="space-y-4">
+                            <h3 class="text-sm font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-2 border-b border-gray-800 pb-2">
+                                [ ส่วนที่ 4: การดำเนินการและสรุปผล (Actions & Conclusion) ]
+                            </h3>
+                            <div>
+                                <label class="block text-gray-400 font-semibold mb-2">- ขั้นตอนการสืบสวนที่ทำไปแล้ว:</label>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    ${['ตรวจสอบกล้องวงจรปิด (CCTV)', 'สอบปากคำพยานและผู้เกี่ยวข้อง', 'ประสานงานกองพิสูจน์หลักฐาน (Forensics)', 'ติดตามตัวผู้ต้องสงสัย'].map(a => `
+                                        <label class="flex items-center gap-2 bg-gray-900/60 p-2.5 rounded-xl border border-gray-800 cursor-pointer">
+                                            <input type="checkbox" name="inv-action" value="${escapeHtml(a)}" ${c && Array.isArray(c.actions) && c.actions.includes(a) ? 'checked' : ''} class="rounded text-indigo-600 focus:ring-0">
+                                            <span>${escapeHtml(a)}</span>
+                                        </label>
+                                    `).join('')}
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-gray-400 font-semibold mb-1">- บันทึกการสืบสวน / สรุปแนวทาง / Timeline:</label>
+                                <textarea id="inv-notes" rows="4" placeholder="ลงบันทึกการทำงาน สรุปแนวทาง หรือ Timeline การสืบสวน เช่น&#10;01/01/2026 - ตรวจสอบกล้องวงจรปิด พบผู้ต้องสงสัย 1 ราย&#10;02/01/2026 - นัดสอบปากคำพยานเพิ่มเติม" class="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-gray-200 focus:outline-none focus:border-indigo-500 font-mono text-xs">${escapeHtml(c ? c.investigationNotes : '')}</textarea>
+                            </div>
+                            <div>
+                                <label class="block text-gray-400 font-semibold mb-2">- สถานะคดีปัจจุบัน (Case Status):</label>
+                                <select id="inv-status" required class="w-full sm:w-80 px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-gray-200 focus:outline-none focus:border-indigo-500">
+                                    ${CASE_STATUSES.map(s => `<option value="${escapeHtml(s)}" ${c && c.status === s ? 'selected' : (!c && s === CASE_STATUSES[0] ? 'selected' : '')}>${escapeHtml(s)}</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- ส่วนลงนาม -->
+                        <div class="pt-4 border-t border-gray-800 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-gray-400 font-semibold mb-1">ลายมือชื่อผู้รายงาน:</label>
+                                <input type="text" id="inv-signature" required value="${escapeHtml(c ? (c.signature || c.leadDetective) : user.name)}" placeholder="ระบุลายมือชื่อ" class="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-xl text-gray-200 focus:outline-none focus:border-indigo-500">
+                            </div>
+                            <div>
+                                <label class="block text-gray-400 font-semibold mb-1">ตำแหน่ง:</label>
+                                <input type="text" id="inv-position" required value="${escapeHtml(c ? (c.position || 'Lead Detective') : 'Lead Detective')}" placeholder="ระบุตำแหน่ง" class="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-xl text-gray-200 focus:outline-none focus:border-indigo-500">
+                            </div>
+                        </div>
+
+                        <!-- Buttons -->
+                        <div class="flex items-center justify-end gap-3 pt-4 border-t border-police-border">
+                            <button type="button" onclick="setActiveTab('investigation-list')" class="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-white font-semibold rounded-xl transition-all">
+                                Cancel
+                            </button>
+                            <button type="submit" class="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-semibold rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-2">
+                                <i class="fa-solid fa-floppy-disk"></i> ${isEdit ? 'บันทึกการแก้ไข (Save Changes)' : 'บันทึกรายงาน INVESTIGATIVE REPORT'}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            `;
+        }
+
+        function toggleCrimeOtherInput() {
+            const select = document.getElementById('inv-crime-type');
+            const container = document.getElementById('inv-crime-other-container');
+            if (select && select.value === 'อื่นๆ') {
+                container.classList.remove('hidden');
+            } else if (container) {
+                container.classList.add('hidden');
+            }
+        }
+
+        function handleCreateInvestigation(e, editCaseId = null) {
+            e.preventDefault();
+
+            const caseId = document.getElementById('inv-case-id').value.trim();
+            const reportDate = document.getElementById('inv-report-date').value.trim();
+            const leadDetective = document.getElementById('inv-lead').value.trim();
+            const assistingOfficers = document.getElementById('inv-assisting').value.trim();
+            const crimeType = document.getElementById('inv-crime-type').value;
+            const crimeTypeOther = document.getElementById('inv-crime-other')?.value.trim() || '';
+            const incidentDateTime = document.getElementById('inv-datetime').value.trim();
+            const location = document.getElementById('inv-location').value.trim();
+
+            const victims = collectRows('victims-container', '.victim-row', {
+                name: 'victim-name', contact: 'victim-contact', role: 'victim-role', injury: 'victim-injury'
+            });
+            const suspects = collectRows('suspects-container', '.suspect-row', {
+                name: 'suspect-name', description: 'suspect-description', contact: 'suspect-contact', locationSeen: 'suspect-location'
+            });
+            const witnesses = collectRows('witnesses-container', '.witness-row', {
+                name: 'witness-name', contact: 'witness-contact', statement: 'witness-statement'
+            });
+
+            const summary = document.getElementById('inv-summary').value.trim();
+            const evidence = document.getElementById('inv-evidence').value.trim();
+            const investigationNotes = document.getElementById('inv-notes').value.trim();
+
+            const actionCheckboxes = document.querySelectorAll('input[name="inv-action"]:checked');
+            const actions = Array.from(actionCheckboxes).map(cb => cb.value);
+
+            const status = document.getElementById('inv-status').value;
+
+            const signature = document.getElementById('inv-signature').value.trim();
+            const position = document.getElementById('inv-position').value.trim();
+
+            const caseData = {
+                id: editCaseId || caseId || ('CR-' + Math.floor(100000 + Math.random() * 900000)),
+                reportDate,
+                leadDetective,
+                assistingOfficers,
+                crimeType,
+                crimeTypeOther,
+                incidentDateTime,
+                location,
+                victims,
+                suspects,
+                witnesses,
+                summary,
+                evidence,
+                actions,
+                investigationNotes,
+                status,
+                signature,
+                position
+            };
+
+            const cases = getStoredInvestigations();
+
+            if (editCaseId) {
+                const idx = cases.findIndex(c => c.id === editCaseId);
+                if (idx !== -1) {
+                    cases[idx] = caseData;
+                } else {
+                    cases.unshift(caseData);
+                }
+                localStorage.setItem(STORAGE_KEYS.INVESTIGATIONS, JSON.stringify(cases));
+                showToast(`บันทึกการแก้ไขคดี #${caseData.id} เรียบร้อยแล้ว`, 'success');
+            } else {
+                cases.unshift(caseData);
+                localStorage.setItem(STORAGE_KEYS.INVESTIGATIONS, JSON.stringify(cases));
+                showToast('บันทึกรายงานสืบสวนเรียบร้อยแล้ว!', 'success');
+            }
+
+            setActiveTab('investigation-list');
+        }
+
+        // Initialize system on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeStorage();
+            renderApp();
+        });
+
+        function renderApp() {
+            const user = getCurrentUser();
+            if (user) {
+                renderDashboardView();
+            } else {
+                renderAuthView();
+            }
+        }
+    </script>
+</body>
+</html>
