@@ -51,7 +51,8 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #4b5563;
         }
-    </style>
+    </style>    <!-- Seed data (default officer accounts & case files) lives in its own file -->
+    <script src="data.js"></script>
 </head>
 <body class="bg-police-dark text-gray-100 min-h-screen flex flex-col selection:bg-indigo-500 selection:text-white">
 
@@ -83,51 +84,14 @@
                 .replace(/'/g, '&#039;');
         }
 
-        // Initial Mock Data if empty
+        // Initial Mock Data if empty (seed data lives in data.js, loaded separately)
         function initializeStorage() {
             if (!localStorage.getItem(STORAGE_KEYS.USERS)) {
-                const defaultUsers = [
-                    {
-                        id: 'CID-99999',
-                        name: 'Col. John Miller',
-                        callsign: 'LSPD-01',
-                        username: 'johnmiller',
-                        password: 'adminpassword'
-                    }
-                ];
-                localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(defaultUsers));
+                localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(DEFAULT_USERS));
             }
 
             if (!localStorage.getItem(STORAGE_KEYS.INVESTIGATIONS)) {
-                const defaultInvestigations = [
-                    {
-                        id: 'CR-100234',
-                        reportDate: '2026-06-06',
-                        leadDetective: 'Col. John Miller',
-                        assistingOfficers: 'Det. Sarah Connor',
-                        crimeType: 'ปล้นทรัพย์',
-                        crimeTypeOther: '',
-                        location: 'Fleeca Bank, Legion Square',
-                        incidentDateTime: '2026-06-05 22:10',
-                        victims: [
-                            { name: 'Fleeca Bank Corp.', contact: '-', role: 'เจ้าของทรัพย์สิน / สถานที่เกิดเหตุ', injury: 'ไม่มีผู้บาดเจ็บ ทรัพย์สินความเสียหายอยู่ระหว่างประเมิน' }
-                        ],
-                        suspects: [
-                            { name: 'Unknown male', description: 'สูงประมาณ 180ซม. สวมหมวกไหมพรม เสื้อฮู้ดสีดำ', contact: '-', locationSeen: 'หลบหนีไปทางตรอกด้านหลังธนาคาร' }
-                        ],
-                        witnesses: [
-                            { name: 'Bank teller', contact: '055-1234', statement: 'เห็นผู้ต้องสงสัยใช้อาวุธปืนข่มขู่ก่อนหลบหนี' }
-                        ],
-                        summary: 'ผู้ต้องสงสัยเข้ามาในธนาคารเวลาประมาณ 22:10 น. ใช้อาวุธปืนข่มขู่พนักงาน และหลบหนีไป',
-                        evidence: '1. ปลอกกระสุนบริเวณหน้าประตู\n2. ไฟล์กล้องวงจรปิด\n3. รอยเท้าบริเวณทางออกหลัง',
-                        actions: ['ตรวจสอบกล้องวงจรปิด (CCTV)', 'สอบปากคำพยานและผู้เกี่ยวข้อง'],
-                        investigationNotes: '06/06/2026 - ตรวจสอบกล้องวงจรปิดบริเวณจุดเกิดเหตุ พบภาพผู้ต้องสงสัย 1 ราย\n06/06/2026 - สอบปากคำพนักงานธนาคารเบื้องต้น',
-                        status: 'กำลังดำเนินการ (In Progress)',
-                        signature: 'Col. John Miller',
-                        position: 'Lead Detective'
-                    }
-                ];
-                localStorage.setItem(STORAGE_KEYS.INVESTIGATIONS, JSON.stringify(defaultInvestigations));
+                localStorage.setItem(STORAGE_KEYS.INVESTIGATIONS, JSON.stringify(DEFAULT_INVESTIGATIONS));
             }
         }
 
